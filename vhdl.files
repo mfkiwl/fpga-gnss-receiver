@@ -1,0 +1,3 @@
+rtl/vhdl/pkg_types.vhd
+rtl/vhdl/fifo.vhd
+tb/vhdl/fifo_tb.vhd
