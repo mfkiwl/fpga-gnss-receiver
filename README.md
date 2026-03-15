@@ -3,7 +3,7 @@
 This repository is a concrete starter implementation of the workflow described in `Intro.md`:
 
 - GSD-2 as project manager/orchestrator
-- HDL tools as ground truth (NVC, slang, Verilator, optional synthesis)
+- HDL tools as ground truth (NVC + vendor synthesis flow)
 - Mechanical verification commands through scripts and Make targets
 
 This now includes a Phase 1 VHDL-first GNSS receiver scaffold from `Phase-1-Plans-and-Goal.md`:
@@ -19,10 +19,8 @@ This now includes a Phase 1 VHDL-first GNSS receiver scaffold from `Phase-1-Plan
 ```text
 rtl/
   vhdl/
-  sv/
 tb/
   vhdl/
-  sv/
 sim/
   scripts/
 lint/
@@ -36,7 +34,6 @@ docs/
 
 ```bash
 make lint-vhdl
-make lint-sv
 make sim-smoke
 make sim-regress
 make synth-check

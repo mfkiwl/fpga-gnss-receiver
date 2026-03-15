@@ -11,10 +11,10 @@
 
 VHDL smoke sim target:
 - `gps_l1_ca_phase1_tb`
-- VCD output: `sim/gps_l1_ca_phase1_tb.vcd`
+- FST output: `sim/gps_l1_ca_phase1_tb.fst`
 
 ## Current Environment Limitation
-- HDL simulators/linters were not available in this workspace session (`nvc` not installed), so only script/Makefile sanity checks were run locally.
+- Full smoke flow may still depend on local toolchain availability.
 
 ## Expected Functional Signals in Sim
 - Acquisition transitions to done/success with configured low threshold.

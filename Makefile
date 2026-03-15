@@ -1,11 +1,10 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: help lint-vhdl lint-sv sim-smoke sim-regress synth-check waves
+.PHONY: help lint-vhdl sim-smoke sim-regress synth-check waves
 
 help:
 	@echo "Targets:"
 	@echo "  make lint-vhdl    - Run VHDL checks with NVC"
-	@echo "  make lint-sv      - Run SystemVerilog checks with slang/verilator"
 	@echo "  make sim-smoke    - Run smoke simulations"
 	@echo "  make sim-regress  - Run regression suite"
 	@echo "  make synth-check  - Run synthesis sanity check"
@@ -13,9 +12,6 @@ help:
 
 lint-vhdl:
 	@./lint/lint_vhdl.sh
-
-lint-sv:
-	@./lint/lint_sv.sh
 
 sim-smoke:
 	@./sim/run_smoke.sh
@@ -28,4 +24,3 @@ synth-check:
 
 waves:
 	@echo "VHDL waveform: sim/gps_l1_ca_phase1_tb.fst"
-	@echo "SV waveform (if enabled by simulator flags): sim/obj_dir/"
