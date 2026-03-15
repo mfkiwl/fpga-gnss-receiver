@@ -18,7 +18,7 @@
 
 ## Top Units
 
-- VHDL TB top: `fifo_tb`
+- VHDL TB top: `gps_l1_ca_phase1_tb`
 - SystemVerilog TB top: `top_tb`
 
 ## Verification Source of Truth
@@ -28,6 +28,12 @@
 - Smoke simulations: `make sim-smoke`
 - Basic regression: `make sim-regress`
 
+Supporting docs:
+- `docs/phase1_register_map.md`
+- `docs/packet_definition.md`
+- `docs/fixed_point_and_loop_notes.md`
+- `docs/phase1_verification_notes.md`
+
 ## Definition of Done
 
 - `make lint-vhdl` passes
@@ -35,3 +41,15 @@
 - `make sim-smoke` passes
 - No new latch/multi-driver/width/uninitialized warnings introduced
 - Any interface changes are reflected in docs and testbenches
+
+## Phase 1 Module Map
+
+- Top integration: `gps_l1_ca_phase1_top`
+- Shared package: `gps_l1_ca_pkg`
+- Control/status: `gps_l1_ca_ctrl`
+- Sample ingress: `axis_sample_ingress`
+- Shared acquisition: `gps_l1_ca_acq`
+- Tracking channel: `gps_l1_ca_track_chan`
+- Navigation bit extraction: `gps_l1_ca_nav`
+- Report packing: `gps_l1_ca_report`
+- UART transport: `uart_tx`

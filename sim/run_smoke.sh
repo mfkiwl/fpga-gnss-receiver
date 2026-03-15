@@ -6,7 +6,7 @@ set -euo pipefail
 
 if command -v ghdl >/dev/null 2>&1; then
   echo "==> Running VHDL smoke simulation"
-  ghdl -r --std=08 fifo_tb --stop-time=200ns --vcd=sim/fifo_tb.vcd
+  ghdl -r --std=08 gps_l1_ca_phase1_tb --stop-time=4ms --vcd=sim/gps_l1_ca_phase1_tb.vcd
 else
   echo "error: ghdl not found. Cannot run VHDL smoke simulation."
   exit 1

@@ -27,5 +27,5 @@ synth-check:
 	@./synth/check_synth.sh
 
 waves:
-	@echo "VHDL waveform: sim/fifo_tb.vcd"
+	@echo "VHDL waveform: sim/gps_l1_ca_phase1_tb.vcd"
 	@echo "SV waveform (if enabled by simulator flags): sim/obj_dir/"

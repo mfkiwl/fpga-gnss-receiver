@@ -21,7 +21,7 @@ fi
 echo "==> GHDL analyze"
 ghdl -a --std=08 "${vhdl_sources[@]}"
 
-echo "==> GHDL elaborate fifo_tb"
-ghdl -e --std=08 fifo_tb
+echo "==> GHDL elaborate gps_l1_ca_phase1_tb"
+ghdl -e --std=08 gps_l1_ca_phase1_tb
 
 echo "VHDL lint/check passed."
