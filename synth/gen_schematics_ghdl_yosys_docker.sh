@@ -17,7 +17,7 @@ echo "    repo:  ${REPO_ROOT}"
 echo "    note: run 'newgrp docker' first if needed for permissions"
 
 docker_cmd=(
-  docker run --rm -it
+  docker run --rm
   --network host
   -v "${REPO_ROOT}:/work"
   -w /work

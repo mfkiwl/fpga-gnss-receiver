@@ -2,6 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.gps_l1_ca_pkg.all;
+use work.gps_l1_ca_nco_pkg.all;
 
 entity gps_l1_ca_track_chan is
   port (
@@ -21,6 +22,8 @@ entity gps_l1_ca_track_chan is
     min_cn0_dbhz_i : in  unsigned(7 downto 0);
     carrier_lock_th_i : in signed(15 downto 0);
     max_lock_fail_i : in unsigned(7 downto 0);
+    dopp_step_pullin_i : in unsigned(15 downto 0);
+    dopp_step_lock_i : in unsigned(15 downto 0);
     track_state_o  : out track_state_t;
     code_lock_o    : out std_logic;
     carrier_lock_o : out std_logic;
@@ -49,8 +52,6 @@ architecture rtl of gps_l1_ca_track_chan is
   constant C_CARR_ERR_DBAND_LOCK   : integer := 8;
   constant C_CN0_M2_SCALE       : integer := 512;
   constant C_LOCK_SMOOTH_DIV    : integer := 8;
-  constant C_DOPP_STEP_PULLIN_HZ: integer := 80;
-  constant C_DOPP_STEP_LOCK_HZ  : integer := 20;
   constant C_CODE_FCW_STEP      : unsigned(31 downto 0) := x"00010000";
   constant C_CODE_FCW_DELTA_MAX : unsigned(31 downto 0) := x"00200000";
   constant C_CARR_FCW_PER_HZ    : integer := 2147;
@@ -164,17 +165,13 @@ architecture rtl of gps_l1_ca_track_chan is
   function isqrt(x : integer) return integer is
     variable n : integer := x;
     variable r : integer := 0;
-    variable b : integer := 1;
+    variable b : integer := 1073741824; -- 2^30, highest power-of-4 below signed 32-bit max.
   begin
     if n <= 0 then
       return 0;
     end if;
 
-    while b <= n / 4 loop
-      b := b * 4;
-    end loop;
-
-    while b > 0 loop
+    for i in 0 to 15 loop
       if n >= r + b then
         n := n - (r + b);
         r := (r / 2) + b;
@@ -184,54 +181,6 @@ architecture rtl of gps_l1_ca_track_chan is
       b := b / 4;
     end loop;
     return r;
-  end function;
-
-  function lo_cos_q15(phase_idx : unsigned(3 downto 0)) return signed is
-    variable idx_i : integer;
-  begin
-    idx_i := to_integer(phase_idx);
-    case idx_i is
-      when 0  => return to_signed(32767, 16);
-      when 1  => return to_signed(30274, 16);
-      when 2  => return to_signed(23170, 16);
-      when 3  => return to_signed(12540, 16);
-      when 4  => return to_signed(0, 16);
-      when 5  => return to_signed(-12540, 16);
-      when 6  => return to_signed(-23170, 16);
-      when 7  => return to_signed(-30274, 16);
-      when 8  => return to_signed(-32767, 16);
-      when 9  => return to_signed(-30274, 16);
-      when 10 => return to_signed(-23170, 16);
-      when 11 => return to_signed(-12540, 16);
-      when 12 => return to_signed(0, 16);
-      when 13 => return to_signed(12540, 16);
-      when 14 => return to_signed(23170, 16);
-      when others => return to_signed(30274, 16);
-    end case;
-  end function;
-
-  function lo_sin_q15(phase_idx : unsigned(3 downto 0)) return signed is
-    variable idx_i : integer;
-  begin
-    idx_i := to_integer(phase_idx);
-    case idx_i is
-      when 0  => return to_signed(0, 16);
-      when 1  => return to_signed(12540, 16);
-      when 2  => return to_signed(23170, 16);
-      when 3  => return to_signed(30274, 16);
-      when 4  => return to_signed(32767, 16);
-      when 5  => return to_signed(30274, 16);
-      when 6  => return to_signed(23170, 16);
-      when 7  => return to_signed(12540, 16);
-      when 8  => return to_signed(0, 16);
-      when 9  => return to_signed(-12540, 16);
-      when 10 => return to_signed(-23170, 16);
-      when 11 => return to_signed(-30274, 16);
-      when 12 => return to_signed(-32767, 16);
-      when 13 => return to_signed(-30274, 16);
-      when 14 => return to_signed(-23170, 16);
-      when others => return to_signed(-12540, 16);
-    end case;
   end function;
 
   function carr_fcw_from_hz(dopp_hz : signed(15 downto 0)) return signed is
@@ -259,9 +208,11 @@ architecture rtl of gps_l1_ca_track_chan is
     ratio_i := snr_ratio_x100;
     base_i := 1;
     octave_i := 0;
-    while base_i <= ratio_i / 2 loop
-      base_i := base_i * 2;
-      octave_i := octave_i + 1;
+    for i in 0 to 30 loop
+      if base_i <= ratio_i / 2 then
+        base_i := base_i * 2;
+        octave_i := octave_i + 1;
+      end if;
     end loop;
 
     frac_q10_i := ((ratio_i - base_i) * 1024) / base_i;
@@ -305,8 +256,8 @@ begin
   cn0_dbhz_o     <= cn0_dbhz_r;
   prompt_i_o     <= prompt_i_rep_r;
   prompt_q_o     <= prompt_q_rep_r;
-  carr_lo_i_s    <= lo_cos_q15(unsigned(carr_nco_phase_r(31 downto 28)));
-  carr_lo_q_s    <= -lo_sin_q15(unsigned(carr_nco_phase_r(31 downto 28)));
+  carr_lo_i_s    <= lo_cos_q15(unsigned(carr_nco_phase_r(31 downto 22)));
+  carr_lo_q_s    <= -lo_sin_q15(unsigned(carr_nco_phase_r(31 downto 22)));
 
   carr_wipe_u : entity work.complex_mixer
     port map (
@@ -717,11 +668,14 @@ begin
                   end if;
 
                   if state_r = TRACK_LOCKED then
-                    doppler_step_hz_i := C_DOPP_STEP_LOCK_HZ;
+                    doppler_step_hz_i := to_integer(dopp_step_lock_i);
                     carrier_err_dband_i := C_CARR_ERR_DBAND_LOCK;
                   else
-                    doppler_step_hz_i := C_DOPP_STEP_PULLIN_HZ;
+                    doppler_step_hz_i := to_integer(dopp_step_pullin_i);
                     carrier_err_dband_i := C_CARR_ERR_DBAND_PULLIN;
+                  end if;
+                  if doppler_step_hz_i < 1 then
+                    doppler_step_hz_i := 1;
                   end if;
 
                   dopp_i := to_integer(dopp_r);

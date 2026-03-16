@@ -21,6 +21,8 @@ All addresses are byte addresses on the assumed simple control bus.
 - `0x20` Lock threshold placeholder (unsigned 16)
 - `0x24` Initial PRN override (`[5:0]`)
 - `0x28` Initial Doppler override (signed 16)
+- `0x2C` Tracking Doppler update step in pull-in state (unsigned 16, Hz)
+- `0x30` Tracking Doppler update step in locked state (unsigned 16, Hz)
 
 ## Status
 - `0x40` Status flags

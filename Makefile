@@ -6,7 +6,7 @@ GNSS_DATA_DIR := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN
 GNSS_DATA_FILE := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat
 GNSS_DATA_SRC := $(GNSS_DATA_DIR)/$(GNSS_DATA_FILE)
 
-.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
+.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-acq-file sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
 
 help:
 	@echo "Targets:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make lint-vhdl    - Run VHDL checks with NVC"
 	@echo "  make sim-smoke    - Run smoke simulations"
 	@echo "  make sim-unit     - Run unit-level VHDL testbenches"
+	@echo "  make sim-acq-file - Run gps_l1_ca_acq_tb with GNSS stimulus file replay"
 	@echo "  make sim-regress  - Run regression suite"
 	@echo "  make phase3-eval  - Run smoke + Phase 3 metric report (non-gating)"
 	@echo "  make phase3-gate  - Run smoke + Phase 3 metric report (gating)"
@@ -50,6 +51,9 @@ sim-smoke:
 sim-unit:
 	@./sim/run_unit_tbs.sh
 
+sim-acq-file:
+	@./sim/run_acq_file_tb.sh
+
 sim-regress:
 	@./sim/run_regression.sh
 
@@ -70,3 +74,4 @@ schematic-local:
 
 waves:
 	@echo "VHDL waveform: sim/gps_l1_ca_phase2_tb.fst"
+	@echo "VHDL waveform: sim/gps_l1_ca_acq_tb.fst"

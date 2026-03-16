@@ -47,7 +47,9 @@ entity gps_l1_ca_ctrl is
     dll_gain_o         : out unsigned(15 downto 0);
     lock_thresh_o      : out unsigned(15 downto 0);
     init_prn_o         : out unsigned(5 downto 0);
-    init_dopp_o        : out signed(15 downto 0)
+    init_dopp_o        : out signed(15 downto 0);
+    dopp_step_pullin_o : out unsigned(15 downto 0);
+    dopp_step_lock_o   : out unsigned(15 downto 0)
   );
 end entity;
 
@@ -71,6 +73,8 @@ architecture rtl of gps_l1_ca_ctrl is
   signal lock_thresh_r     : unsigned(15 downto 0) := to_unsigned(100, 16);
   signal init_prn_r        : unsigned(5 downto 0) := to_unsigned(1, 6);
   signal init_dopp_r       : signed(15 downto 0) := (others => '0');
+  signal dopp_step_pullin_r: unsigned(15 downto 0) := to_unsigned(80, 16);
+  signal dopp_step_lock_r  : unsigned(15 downto 0) := to_unsigned(20, 16);
 begin
   ctrl_wack <= ctrl_wack_r;
   ctrl_rack <= ctrl_rack_r;
@@ -92,6 +96,8 @@ begin
   lock_thresh_o     <= lock_thresh_r;
   init_prn_o        <= init_prn_r;
   init_dopp_o       <= init_dopp_r;
+  dopp_step_pullin_o <= dopp_step_pullin_r;
+  dopp_step_lock_o   <= dopp_step_lock_r;
 
   process (clk)
   begin
@@ -137,6 +143,10 @@ begin
               init_prn_r <= unsigned(ctrl_wdata(5 downto 0));
             when 16#28# =>
               init_dopp_r <= signed(ctrl_wdata(15 downto 0));
+            when 16#2C# =>
+              dopp_step_pullin_r <= unsigned(ctrl_wdata(15 downto 0));
+            when 16#30# =>
+              dopp_step_lock_r <= unsigned(ctrl_wdata(15 downto 0));
             when others =>
               null;
           end case;
@@ -179,6 +189,10 @@ begin
         rd(5 downto 0) := std_logic_vector(init_prn_r);
       when 16#28# =>
         rd(15 downto 0) := std_logic_vector(init_dopp_r);
+      when 16#2C# =>
+        rd(15 downto 0) := std_logic_vector(dopp_step_pullin_r);
+      when 16#30# =>
+        rd(15 downto 0) := std_logic_vector(dopp_step_lock_r);
       when 16#40# =>
         rd(0) := acq_done_i;
         rd(1) := acq_success_i;

@@ -1,5 +1,6 @@
 rtl/vhdl/gps_l1_ca_pkg.vhd
 rtl/vhdl/gps_l1_ca_log_pkg.vhd
+rtl/vhdl/gps_l1_ca_nco_pkg.vhd
 rtl/vhdl/nco_phase_accum.vhd
 rtl/vhdl/ca_prn_gen.vhd
 rtl/vhdl/complex_mixer.vhd

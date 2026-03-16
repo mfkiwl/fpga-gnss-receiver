@@ -75,6 +75,8 @@ architecture rtl of gps_l1_ca_phase1_top is
   signal min_cn0_dbhz   : unsigned(7 downto 0) := to_unsigned(22, 8);
   signal carrier_lock_th: signed(15 downto 0) := to_signed(19661, 16);
   signal max_lock_fail  : unsigned(7 downto 0) := to_unsigned(50, 8);
+  signal dopp_step_pullin : unsigned(15 downto 0);
+  signal dopp_step_lock   : unsigned(15 downto 0);
 
   signal nav_valid      : std_logic;
   signal nav_bit        : std_logic;
@@ -141,7 +143,9 @@ begin
       dll_gain_o      => dll_gain,
       lock_thresh_o   => lock_thresh,
       init_prn_o      => init_prn,
-      init_dopp_o     => init_dopp
+      init_dopp_o     => init_dopp,
+      dopp_step_pullin_o => dopp_step_pullin,
+      dopp_step_lock_o => dopp_step_lock
     );
 
   acq_u : entity work.gps_l1_ca_acq
@@ -186,6 +190,8 @@ begin
       min_cn0_dbhz_i => min_cn0_dbhz,
       carrier_lock_th_i => carrier_lock_th,
       max_lock_fail_i => max_lock_fail,
+      dopp_step_pullin_i => dopp_step_pullin,
+      dopp_step_lock_i => dopp_step_lock,
       track_state_o  => track_state,
       code_lock_o    => code_lock,
       carrier_lock_o => carrier_lock,

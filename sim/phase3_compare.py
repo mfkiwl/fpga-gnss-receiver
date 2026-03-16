@@ -4,7 +4,7 @@ import math
 import re
 import statistics
 import sys
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 
 LLH = Tuple[float, float, float]
@@ -23,6 +23,28 @@ def parse_expected(path: str) -> List[LLH]:
             m = pat.search(line)
             if m:
                 out.append((float(m.group(1)), float(m.group(2)), float(m.group(3))))
+    return out
+
+
+def parse_nav_prns(path: str) -> Set[int]:
+    pat_nav_msg = re.compile(
+        r"New\s+GPS\s+NAV\s+message\s+received.*?GPS\s+PRN\s*0*([0-9]{1,2})",
+        re.IGNORECASE,
+    )
+    pat_nav_dec = re.compile(
+        r"NAV\s+decoded:\s*PRN\s*=\s*([0-9]{1,2})",
+        re.IGNORECASE,
+    )
+    out: Set[int] = set()
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            m1 = pat_nav_msg.search(line)
+            if m1:
+                out.add(int(m1.group(1)))
+                continue
+            m2 = pat_nav_dec.search(line)
+            if m2:
+                out.add(int(m2.group(1)))
     return out
 
 
@@ -108,7 +130,9 @@ def main() -> int:
     args = ap.parse_args()
 
     expected = parse_expected(args.expected)
+    expected_nav_prns = parse_nav_prns(args.expected)
     sim, obs_used = parse_sim(args.sim_log)
+    sim_nav_prns = parse_nav_prns(args.sim_log)
 
     fixes_ok = len(expected) > 0 and len(sim) > 0
     metrics = phase3_metrics(sim, expected)
@@ -150,12 +174,30 @@ def main() -> int:
     add_metric("Min observations used", None if min_obs is None else float(min_obs), ">= 4", obs_ok)
     hard_fail = hard_fail or (not obs_ok)
 
+    nav_prn_cov_ok = True
+    nav_prn_cov_pct: Optional[float] = None
+    missing_nav_prns: Set[int] = set()
+    if expected_nav_prns:
+        found_nav_prns = expected_nav_prns & sim_nav_prns
+        missing_nav_prns = expected_nav_prns - sim_nav_prns
+        nav_prn_cov_pct = (100.0 * float(len(found_nav_prns))) / float(len(expected_nav_prns))
+        nav_prn_cov_ok = len(missing_nav_prns) == 0
+        add_metric("Expected NAV PRN coverage [%]", nav_prn_cov_pct, "== 100", nav_prn_cov_ok)
+        hard_fail = hard_fail or (not nav_prn_cov_ok)
+    else:
+        add_metric("Expected NAV PRN coverage [%]", None, "N/A (no expected NAV PRNs)", True)
+
     paired = metrics["paired_epochs"] if metrics is not None else 0
 
     print("Phase 3 GNSS-SDR Comparison")
     print(f"- Expected fixes parsed: {len(expected)}")
     print(f"- Simulation fixes parsed: {len(sim)}")
     print(f"- Paired epochs used: {paired}")
+    if expected_nav_prns:
+        print(f"- Expected NAV PRNs: {','.join(str(x) for x in sorted(expected_nav_prns))}")
+        print(f"- Observed NAV PRNs: {','.join(str(x) for x in sorted(sim_nav_prns)) if sim_nav_prns else '(none)'}")
+        if missing_nav_prns:
+            print(f"- Missing NAV PRNs: {','.join(str(x) for x in sorted(missing_nav_prns))}")
     print("")
     print("| Metric | Value | Target | Result |")
     print("| --- | ---: | ---: | :---: |")

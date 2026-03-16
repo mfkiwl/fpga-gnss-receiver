@@ -22,6 +22,8 @@ architecture tb of gps_l1_ca_chan_bank_tb is
   signal min_cn0_dbhz_i     : unsigned(7 downto 0) := to_unsigned(20, 8);
   signal carrier_lock_th_i  : signed(15 downto 0) := to_signed(19661, 16);
   signal max_lock_fail_i    : unsigned(7 downto 0) := to_unsigned(20, 8);
+  signal dopp_step_pullin_i : unsigned(15 downto 0) := to_unsigned(80, 16);
+  signal dopp_step_lock_i   : unsigned(15 downto 0) := to_unsigned(20, 16);
   signal assign_valid_i     : std_logic := '0';
   signal assign_ch_idx_i    : unsigned(7 downto 0) := (others => '0');
   signal assign_prn_i       : unsigned(5 downto 0) := (others => '0');
@@ -60,6 +62,8 @@ begin
       min_cn0_dbhz_i     => min_cn0_dbhz_i,
       carrier_lock_th_i  => carrier_lock_th_i,
       max_lock_fail_i    => max_lock_fail_i,
+      dopp_step_pullin_i => dopp_step_pullin_i,
+      dopp_step_lock_i   => dopp_step_lock_i,
       assign_valid_i     => assign_valid_i,
       assign_ch_idx_i    => assign_ch_idx_i,
       assign_prn_i       => assign_prn_i,

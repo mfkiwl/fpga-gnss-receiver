@@ -25,6 +25,8 @@ All addresses are byte addresses on the assumed simple control bus.
 - `0x1C` minimum C/N0 threshold (unsigned 8, dB-Hz)
 - `0x20` carrier lock threshold (signed 16, Q15 `cos(2*phase_err)` metric)
 - `0x24` maximum consecutive lock-fail epochs before lock drop (unsigned 8)
+- `0x2C` tracking Doppler update step in pull-in state (unsigned 16, Hz)
+- `0x30` tracking Doppler update step in locked state (unsigned 16, Hz)
 
 ## Status
 - `0x40` global status

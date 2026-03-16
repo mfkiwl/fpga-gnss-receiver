@@ -13,6 +13,7 @@ UNIT_TBS=(
 UNIT_TB_STOP_TIME="${UNIT_TB_STOP_TIME:-100us}"
 NVC_STDERR_LEVEL="${NVC_STDERR_LEVEL:-none}"
 UNIT_RUN_LINT="${UNIT_RUN_LINT:-1}"
+UNIT_ACQ_WAVE_FILE="${UNIT_ACQ_WAVE_FILE:-sim/gps_l1_ca_acq_tb.fst}"
 
 if ! command -v nvc >/dev/null 2>&1; then
   echo "error: nvc not found. Cannot run unit TBs."
@@ -33,8 +34,21 @@ failed_tbs=()
 
 for tb in "${UNIT_TBS[@]}"; do
   echo "-- ${tb}"
+  run_cmd=(
+    nvc --std=2008
+    --stderr="${NVC_STDERR_LEVEL}"
+    -r "${tb}"
+    --stop-time="${UNIT_TB_STOP_TIME}"
+  )
+
+  if [[ "${tb}" == "gps_l1_ca_acq_tb" ]]; then
+    mkdir -p "$(dirname "${UNIT_ACQ_WAVE_FILE}")"
+    run_cmd+=(--wave="${UNIT_ACQ_WAVE_FILE}")
+    echo "   wave: ${UNIT_ACQ_WAVE_FILE}"
+  fi
+
   if nvc --std=2008 --stderr="${NVC_STDERR_LEVEL}" -e "${tb}" && \
-     nvc --std=2008 --stderr="${NVC_STDERR_LEVEL}" -r "${tb}" --stop-time="${UNIT_TB_STOP_TIME}"; then
+     "${run_cmd[@]}"; then
     pass_count=$((pass_count + 1))
   else
     fail_count=$((fail_count + 1))

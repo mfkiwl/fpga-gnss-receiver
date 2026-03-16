@@ -57,7 +57,9 @@ entity gps_l1_ca_ctrl_phase2 is
     detect_thresh_o    : out unsigned(31 downto 0);
     min_cn0_dbhz_o     : out unsigned(7 downto 0);
     carrier_lock_th_o  : out signed(15 downto 0);
-    max_lock_fail_o    : out unsigned(7 downto 0)
+    max_lock_fail_o    : out unsigned(7 downto 0);
+    dopp_step_pullin_o : out unsigned(15 downto 0);
+    dopp_step_lock_o   : out unsigned(15 downto 0)
   );
 end entity;
 
@@ -87,6 +89,8 @@ architecture rtl of gps_l1_ca_ctrl_phase2 is
   signal min_cn0_dbhz_r    : unsigned(7 downto 0) := to_unsigned(22, 8);
   signal carrier_lock_th_r : signed(15 downto 0) := to_signed(19661, 16); -- ~0.60 in Q15
   signal max_lock_fail_r   : unsigned(7 downto 0) := to_unsigned(50, 8);
+  signal dopp_step_pullin_r: unsigned(15 downto 0) := to_unsigned(80, 16);
+  signal dopp_step_lock_r  : unsigned(15 downto 0) := to_unsigned(20, 16);
 begin
   ctrl_wack <= ctrl_wack_r;
   ctrl_rack <= ctrl_rack_r;
@@ -111,6 +115,8 @@ begin
   min_cn0_dbhz_o     <= min_cn0_dbhz_r;
   carrier_lock_th_o  <= carrier_lock_th_r;
   max_lock_fail_o    <= max_lock_fail_r;
+  dopp_step_pullin_o <= dopp_step_pullin_r;
+  dopp_step_lock_o   <= dopp_step_lock_r;
 
   process (clk)
   begin
@@ -158,6 +164,10 @@ begin
               carrier_lock_th_r <= signed(ctrl_wdata(15 downto 0));
             when 16#24# =>
               max_lock_fail_r <= unsigned(ctrl_wdata(7 downto 0));
+            when 16#2C# =>
+              dopp_step_pullin_r <= unsigned(ctrl_wdata(15 downto 0));
+            when 16#30# =>
+              dopp_step_lock_r <= unsigned(ctrl_wdata(15 downto 0));
             when others =>
               null;
           end case;
@@ -202,6 +212,10 @@ begin
         rd(15 downto 0) := std_logic_vector(carrier_lock_th_r);
       when 16#24# =>
         rd(7 downto 0) := std_logic_vector(max_lock_fail_r);
+      when 16#2C# =>
+        rd(15 downto 0) := std_logic_vector(dopp_step_pullin_r);
+      when 16#30# =>
+        rd(15 downto 0) := std_logic_vector(dopp_step_lock_r);
       when 16#40# =>
         rd(0) := acq_done_i;
         rd(1) := acq_success_i;

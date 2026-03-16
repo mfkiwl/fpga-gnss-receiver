@@ -26,6 +26,7 @@
 - Phase 3 metrics (gating thresholds): `make phase3-gate`
 - Schematic generation (Docker): `make schematic`
 - Schematic generation (local tools): `make schematic-local`
+  - Note: schematic flow is RTL-only (TBs excluded) and, by default, uses schematic stubs for real-math blocks (`gps_l1_ca_nav_store`, `gps_l1_ca_observables`, `gps_l1_ca_pvt`) due to GHDL/Yosys synthesis limits. Set `SCHEMATIC_USE_STUBS=0` to disable.
 - Optional smoke-time TB overrides: set `TB_GENERIC_ARGS`, for example
   - `TB_GENERIC_ARGS="-gG_MAX_FILE_SAMPLES=50000" make sim-smoke`
 
