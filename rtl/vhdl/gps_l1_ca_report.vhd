@@ -35,6 +35,58 @@ architecture rtl of gps_l1_ca_report is
   signal tx_valid_r     : std_logic := '0';
   signal tx_data_r      : std_logic_vector(7 downto 0) := (others => '0');
   signal tx_last_r      : std_logic := '0';
+
+  -- pragma translate_off
+  constant C_LOG_UART_BYTES : boolean := false;
+
+  function nibble_to_hex(n : unsigned(3 downto 0)) return character is
+  begin
+    case to_integer(n) is
+      when 0  => return '0';
+      when 1  => return '1';
+      when 2  => return '2';
+      when 3  => return '3';
+      when 4  => return '4';
+      when 5  => return '5';
+      when 6  => return '6';
+      when 7  => return '7';
+      when 8  => return '8';
+      when 9  => return '9';
+      when 10 => return 'A';
+      when 11 => return 'B';
+      when 12 => return 'C';
+      when 13 => return 'D';
+      when 14 => return 'E';
+      when others => return 'F';
+    end case;
+  end function;
+
+  function to_hex8(v : std_logic_vector(7 downto 0)) return string is
+    variable s : string(1 to 2);
+  begin
+    s(1) := nibble_to_hex(unsigned(v(7 downto 4)));
+    s(2) := nibble_to_hex(unsigned(v(3 downto 0)));
+    return s;
+  end function;
+
+  function sl_to_text(s : std_logic) return string is
+  begin
+    if s = '1' then
+      return "yes";
+    else
+      return "no";
+    end if;
+  end function;
+
+  function state_to_text(s : track_state_t) return string is
+  begin
+    case s is
+      when TRACK_IDLE   => return "IDLE";
+      when TRACK_PULLIN => return "PULLIN";
+      when TRACK_LOCKED => return "LOCKED";
+    end case;
+  end function;
+  -- pragma translate_on
 begin
   tx_valid <= tx_valid_r;
   tx_data  <= tx_data_r;
@@ -93,11 +145,34 @@ begin
 
           pkt_busy_r  <= '1';
           pkt_index_r <= 0;
+
+          -- pragma translate_off
+          report "UART report (pre-encoding): " &
+                 "PRN=" & integer'image(to_integer(prn)) &
+                 ", state=" & state_to_text(track_state) &
+                 ", sample_counter=" & integer'image(to_integer(sample_counter)) &
+                 ", doppler_hz=" & integer'image(to_integer(doppler_hz)) &
+                 ", code_phase=" & integer'image(to_integer(code_phase)) &
+                 ", prompt_i=" & integer'image(to_integer(prompt_i)) &
+                 ", prompt_q=" & integer'image(to_integer(prompt_q)) &
+                 ", code_lock=" & sl_to_text(code_lock) &
+                 ", carrier_lock=" & sl_to_text(carrier_lock) &
+                 ", nav_valid=" & sl_to_text(nav_valid) &
+                 ", nav_bit=" & std_logic'image(nav_bit);
+          -- pragma translate_on
         end if;
 
         if pkt_busy_r = '1' and tx_ready = '1' then
           tx_valid_r <= '1';
           tx_data_r  <= pkt_r(pkt_index_r);
+
+          -- pragma translate_off
+          if C_LOG_UART_BYTES then
+            report "UART byte[" & integer'image(pkt_index_r) &
+                   "] = 0x" & to_hex8(pkt_r(pkt_index_r));
+          end if;
+          -- pragma translate_on
+
           if pkt_index_r = 15 then
             tx_last_r   <= '1';
             pkt_busy_r  <= '0';
