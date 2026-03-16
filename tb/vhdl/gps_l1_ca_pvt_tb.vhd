@@ -31,6 +31,11 @@ architecture tb of gps_l1_ca_pvt_tb is
   signal pvt_lon_e7_o     : signed(31 downto 0);
   signal pvt_height_mm_o  : signed(31 downto 0);
   signal pvt_cbias_o      : signed(31 downto 0);
+  signal pvt_resid_rms_m_o: unsigned(31 downto 0);
+  signal pvt_gdop_x100_o  : unsigned(15 downto 0);
+  signal pvt_pdop_x100_o  : unsigned(15 downto 0);
+  signal pvt_hdop_x100_o  : unsigned(15 downto 0);
+  signal pvt_vdop_x100_o  : unsigned(15 downto 0);
 begin
   clk <= not clk after C_CLK_PERIOD / 2;
 
@@ -58,7 +63,12 @@ begin
       pvt_lat_e7_o     => pvt_lat_e7_o,
       pvt_lon_e7_o     => pvt_lon_e7_o,
       pvt_height_mm_o  => pvt_height_mm_o,
-      pvt_cbias_o      => pvt_cbias_o
+      pvt_cbias_o      => pvt_cbias_o,
+      pvt_resid_rms_m_o=> pvt_resid_rms_m_o,
+      pvt_gdop_x100_o  => pvt_gdop_x100_o,
+      pvt_pdop_x100_o  => pvt_pdop_x100_o,
+      pvt_hdop_x100_o  => pvt_hdop_x100_o,
+      pvt_vdop_x100_o  => pvt_vdop_x100_o
     );
 
   stim_proc : process
@@ -119,6 +129,8 @@ begin
     assert to_integer(pvt_sats_used_o) >= 4 report "Expected at least 4 satellites used in solution." severity failure;
     assert abs(to_integer(pvt_cbias_o)) < 1000000 report "Expected bounded receiver clock bias estimate." severity failure;
     assert to_integer(pvt_height_mm_o) <= 20000000 report "Expected bounded height output." severity failure;
+    assert to_integer(pvt_resid_rms_m_o) >= 0 report "Expected non-negative RMS residual output." severity failure;
+    assert to_integer(pvt_pdop_x100_o) > 0 report "Expected non-zero PDOP approximation output." severity failure;
 
     log_msg("gps_l1_ca_pvt_tb completed");
     wait;

@@ -485,10 +485,9 @@ begin
         tow_seconds_r    <= (others => '0');
 
         for p in 0 to 31 loop
-          -- Hold-last-valid fallback seed until true ephemeris decode is complete.
-          sat_x_ecef_r(p) <= to_signed((-13000000) + p * 800000, 32);
-          sat_y_ecef_r(p) <= to_signed(10000000 - p * 600000, 32);
-          sat_z_ecef_r(p) <= to_signed((-9000000) + p * 550000, 32);
+          sat_x_ecef_r(p) <= (others => '0');
+          sat_y_ecef_r(p) <= (others => '0');
+          sat_z_ecef_r(p) <= (others => '0');
           sat_clk_corr_m_r(p) <= (others => '0');
 
           sf_mask_r(p) <= (others => '0');

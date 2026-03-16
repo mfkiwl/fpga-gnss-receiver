@@ -73,10 +73,15 @@ architecture rtl of gps_l1_ca_phase1_top is
   signal prompt_i       : signed(23 downto 0);
   signal prompt_q       : signed(23 downto 0);
   signal min_cn0_dbhz   : unsigned(7 downto 0) := to_unsigned(22, 8);
-  signal carrier_lock_th: signed(15 downto 0) := to_signed(19661, 16);
+  signal carrier_lock_th: signed(15 downto 0) := to_signed(16384, 16);
   signal max_lock_fail  : unsigned(7 downto 0) := to_unsigned(50, 8);
   signal dopp_step_pullin : unsigned(15 downto 0);
   signal dopp_step_lock   : unsigned(15 downto 0);
+  signal acq_coh_ms       : unsigned(7 downto 0) := to_unsigned(1, 8);
+  signal acq_noncoh_dwells: unsigned(7 downto 0) := to_unsigned(2, 8);
+  signal acq_dopp_bins    : unsigned(7 downto 0) := to_unsigned(9, 8);
+  signal acq_code_bins    : unsigned(7 downto 0) := to_unsigned(8, 8);
+  signal acq_code_step    : unsigned(10 downto 0) := to_unsigned(64, 11);
 
   signal nav_valid      : std_logic;
   signal nav_bit        : std_logic;
@@ -160,6 +165,11 @@ begin
       doppler_max   => doppler_max,
       doppler_step  => doppler_step,
       detect_thresh => detect_thresh,
+      coh_ms_i      => acq_coh_ms,
+      noncoh_dwells_i => acq_noncoh_dwells,
+      doppler_bin_count_i => acq_dopp_bins,
+      code_bin_count_i => acq_code_bins,
+      code_bin_step_i => acq_code_step,
       s_valid       => in_tvalid,
       s_i           => in_i,
       s_q           => in_q,

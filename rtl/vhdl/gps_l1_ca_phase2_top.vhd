@@ -60,6 +60,11 @@ architecture rtl of gps_l1_ca_phase2_top is
   signal max_lock_fail    : unsigned(7 downto 0);
   signal dopp_step_pullin : unsigned(15 downto 0);
   signal dopp_step_lock   : unsigned(15 downto 0);
+  signal acq_coh_ms       : unsigned(7 downto 0);
+  signal acq_noncoh_dwells: unsigned(7 downto 0);
+  signal acq_dopp_bins    : unsigned(7 downto 0);
+  signal acq_code_bins    : unsigned(7 downto 0);
+  signal acq_code_step    : unsigned(10 downto 0);
 
   signal acq_start_pulse  : std_logic;
   signal acq_prn_start    : unsigned(5 downto 0);
@@ -110,6 +115,10 @@ architecture rtl of gps_l1_ca_phase2_top is
   signal obs_prn          : u6_arr_t(0 to G_NUM_CHANNELS - 1);
   signal obs_dopp         : s16_arr_t(0 to G_NUM_CHANNELS - 1);
   signal obs_range        : u32_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal obs_rate_mps     : s32_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal obs_carrier_cyc  : s32_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal obs_cn0_meta     : u8_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal obs_lock_quality : std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
   signal obs_sat_x        : s32_arr_t(0 to G_NUM_CHANNELS - 1);
   signal obs_sat_y        : s32_arr_t(0 to G_NUM_CHANNELS - 1);
   signal obs_sat_z        : s32_arr_t(0 to G_NUM_CHANNELS - 1);
@@ -123,6 +132,11 @@ architecture rtl of gps_l1_ca_phase2_top is
   signal pvt_lon_e7       : signed(31 downto 0);
   signal pvt_height_mm    : signed(31 downto 0);
   signal pvt_cbias        : signed(31 downto 0);
+  signal pvt_resid_rms_m  : unsigned(31 downto 0);
+  signal pvt_gdop_x100    : unsigned(15 downto 0);
+  signal pvt_pdop_x100    : unsigned(15 downto 0);
+  signal pvt_hdop_x100    : unsigned(15 downto 0);
+  signal pvt_vdop_x100    : unsigned(15 downto 0);
 
   signal chan_evt_valid   : std_logic := '0';
   signal chan_evt_idx     : unsigned(7 downto 0) := (others => '0');
@@ -190,6 +204,11 @@ begin
       pvt_lon_e7_i      => pvt_lon_e7,
       pvt_height_mm_i   => pvt_height_mm,
       pvt_cbias_i       => pvt_cbias,
+      pvt_resid_rms_m_i => pvt_resid_rms_m,
+      pvt_gdop_x100_i   => pvt_gdop_x100,
+      pvt_pdop_x100_i   => pvt_pdop_x100,
+      pvt_hdop_x100_i   => pvt_hdop_x100,
+      pvt_vdop_x100_i   => pvt_vdop_x100,
       uart_busy_i       => uart_busy,
       core_en_o         => core_en,
       soft_reset_req_o  => soft_reset_req,
@@ -211,7 +230,12 @@ begin
       carrier_lock_th_o => carrier_lock_th,
       max_lock_fail_o   => max_lock_fail,
       dopp_step_pullin_o => dopp_step_pullin,
-      dopp_step_lock_o => dopp_step_lock
+      dopp_step_lock_o => dopp_step_lock,
+      acq_coh_ms_o       => acq_coh_ms,
+      acq_noncoh_dwells_o=> acq_noncoh_dwells,
+      acq_dopp_bins_o    => acq_dopp_bins,
+      acq_code_bins_o    => acq_code_bins,
+      acq_code_step_o    => acq_code_step
     );
 
   acq_sched_u : entity work.gps_l1_ca_acq_sched
@@ -257,6 +281,11 @@ begin
       doppler_max   => doppler_max,
       doppler_step  => doppler_step,
       detect_thresh => detect_thresh,
+      coh_ms_i      => acq_coh_ms,
+      noncoh_dwells_i => acq_noncoh_dwells,
+      doppler_bin_count_i => acq_dopp_bins,
+      code_bin_count_i => acq_code_bins,
+      code_bin_step_i => acq_code_step,
       s_valid       => in_tvalid,
       s_i           => in_i,
       s_q           => in_q,
@@ -340,9 +369,11 @@ begin
       tow_seconds_i     => tow_seconds,
       chan_alloc_i      => chan_alloc,
       chan_code_lock_i  => chan_code_lock,
+      chan_carrier_lock_i => chan_carrier_lock,
       chan_prn_i        => chan_prn,
       chan_dopp_i       => chan_dopp,
       chan_code_i       => chan_code,
+      chan_cn0_dbhz_i   => chan_cn0_dbhz,
       eph_valid_prn_i   => eph_valid_prn,
       sat_x_ecef_i      => sat_x_ecef_prn,
       sat_y_ecef_i      => sat_y_ecef_prn,
@@ -359,6 +390,10 @@ begin
       obs_prn_o         => obs_prn,
       obs_dopp_o        => obs_dopp,
       obs_range_o       => obs_range,
+      obs_rate_mps_o    => obs_rate_mps,
+      obs_carrier_cyc_o => obs_carrier_cyc,
+      obs_cn0_dbhz_o    => obs_cn0_meta,
+      obs_lock_quality_o=> obs_lock_quality,
       obs_sat_x_o       => obs_sat_x,
       obs_sat_y_o       => obs_sat_y,
       obs_sat_z_o       => obs_sat_z,
@@ -390,7 +425,12 @@ begin
       pvt_lat_e7_o     => pvt_lat_e7,
       pvt_lon_e7_o     => pvt_lon_e7,
       pvt_height_mm_o  => pvt_height_mm,
-      pvt_cbias_o      => pvt_cbias
+      pvt_cbias_o      => pvt_cbias,
+      pvt_resid_rms_m_o=> pvt_resid_rms_m,
+      pvt_gdop_x100_o  => pvt_gdop_x100,
+      pvt_pdop_x100_o  => pvt_pdop_x100,
+      pvt_hdop_x100_o  => pvt_hdop_x100,
+      pvt_vdop_x100_o  => pvt_vdop_x100
     );
 
   report_u : entity work.gps_l1_ca_report_phase2

@@ -20,9 +20,11 @@ entity gps_l1_ca_observables is
     tow_seconds_i     : in  unsigned(31 downto 0);
     chan_alloc_i      : in  std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
     chan_code_lock_i  : in  std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
+    chan_carrier_lock_i : in  std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
     chan_prn_i        : in  u6_arr_t(0 to G_NUM_CHANNELS - 1);
     chan_dopp_i       : in  s16_arr_t(0 to G_NUM_CHANNELS - 1);
     chan_code_i       : in  u11_arr_t(0 to G_NUM_CHANNELS - 1);
+    chan_cn0_dbhz_i   : in  u8_arr_t(0 to G_NUM_CHANNELS - 1);
     eph_valid_prn_i   : in  std_logic_vector(31 downto 0);
     sat_x_ecef_i      : in  s32_arr_t(0 to 31);
     sat_y_ecef_i      : in  s32_arr_t(0 to 31);
@@ -39,6 +41,10 @@ entity gps_l1_ca_observables is
     obs_prn_o         : out u6_arr_t(0 to G_NUM_CHANNELS - 1);
     obs_dopp_o        : out s16_arr_t(0 to G_NUM_CHANNELS - 1);
     obs_range_o       : out u32_arr_t(0 to G_NUM_CHANNELS - 1);
+    obs_rate_mps_o    : out s32_arr_t(0 to G_NUM_CHANNELS - 1);
+    obs_carrier_cyc_o : out s32_arr_t(0 to G_NUM_CHANNELS - 1);
+    obs_cn0_dbhz_o    : out u8_arr_t(0 to G_NUM_CHANNELS - 1);
+    obs_lock_quality_o: out std_logic_vector(G_NUM_CHANNELS - 1 downto 0);
     obs_sat_x_o       : out s32_arr_t(0 to G_NUM_CHANNELS - 1);
     obs_sat_y_o       : out s32_arr_t(0 to G_NUM_CHANNELS - 1);
     obs_sat_z_o       : out s32_arr_t(0 to G_NUM_CHANNELS - 1);
@@ -64,6 +70,10 @@ architecture rtl of gps_l1_ca_observables is
   signal obs_prn_r         : u6_arr_t(0 to G_NUM_CHANNELS - 1);
   signal obs_dopp_r        : s16_arr_t(0 to G_NUM_CHANNELS - 1);
   signal obs_range_r       : u32_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal obs_rate_mps_r    : s32_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal obs_carrier_cyc_r : s32_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal obs_cn0_dbhz_r    : u8_arr_t(0 to G_NUM_CHANNELS - 1);
+  signal obs_lock_quality_r: std_logic_vector(G_NUM_CHANNELS - 1 downto 0) := (others => '0');
   signal obs_sat_x_r       : s32_arr_t(0 to G_NUM_CHANNELS - 1);
   signal obs_sat_y_r       : s32_arr_t(0 to G_NUM_CHANNELS - 1);
   signal obs_sat_z_r       : s32_arr_t(0 to G_NUM_CHANNELS - 1);
@@ -73,6 +83,7 @@ architecture rtl of gps_l1_ca_observables is
 
   signal prev_range_r      : u32_arr_t(0 to G_NUM_CHANNELS - 1);
   signal prev_valid_r      : std_logic_vector(G_NUM_CHANNELS - 1 downto 0) := (others => '0');
+  signal prev_carrier_cyc_r: s32_arr_t(0 to G_NUM_CHANNELS - 1);
   signal prev_sample_cnt_r : unsigned(31 downto 0) := (others => '0');
   signal prev_epoch_valid_r: std_logic := '0';
 
@@ -124,6 +135,10 @@ begin
   obs_prn_o         <= obs_prn_r;
   obs_dopp_o        <= obs_dopp_r;
   obs_range_o       <= obs_range_r;
+  obs_rate_mps_o    <= obs_rate_mps_r;
+  obs_carrier_cyc_o <= obs_carrier_cyc_r;
+  obs_cn0_dbhz_o    <= obs_cn0_dbhz_r;
+  obs_lock_quality_o<= obs_lock_quality_r;
   obs_sat_x_o       <= obs_sat_x_r;
   obs_sat_y_o       <= obs_sat_y_r;
   obs_sat_z_o       <= obs_sat_z_r;
@@ -172,9 +187,15 @@ begin
     variable rr_dopp_mps_v    : real;
     variable rr_blend_mps_v   : real;
     variable dopp_corr_hz_v   : integer;
+    variable rr_mps_i_v       : integer;
+    variable carrier_step_cyc_v : real;
+    variable carrier_cyc_v    : real;
+    variable carrier_cyc_i_v  : integer;
+    variable cn0_i_v          : integer;
 
     variable eph_ok_v         : boolean;
     variable lock_ok_v        : boolean;
+    variable strong_lock_v    : boolean;
     variable range_ok_v       : boolean;
     variable rate_ok_v        : boolean;
     variable valid_obs_v      : boolean;
@@ -185,6 +206,7 @@ begin
         obs_epoch_r       <= (others => '0');
         obs_count_r       <= (others => '0');
         obs_valid_mask_r  <= (others => '0');
+        obs_lock_quality_r<= (others => '0');
         obs_first_prn_r   <= (others => '0');
         obs_first_range_r <= (others => '0');
         prev_sample_cnt_r <= (others => '0');
@@ -194,12 +216,16 @@ begin
           obs_prn_r(i)      <= (others => '0');
           obs_dopp_r(i)     <= (others => '0');
           obs_range_r(i)    <= (others => '0');
+          obs_rate_mps_r(i) <= (others => '0');
+          obs_carrier_cyc_r(i) <= (others => '0');
+          obs_cn0_dbhz_r(i) <= (others => '0');
           obs_sat_x_r(i)    <= (others => '0');
           obs_sat_y_r(i)    <= (others => '0');
           obs_sat_z_r(i)    <= (others => '0');
           obs_clk_corr_r(i) <= (others => '0');
           prev_range_r(i)   <= (others => '0');
           prev_valid_r(i)   <= '0';
+          prev_carrier_cyc_r(i) <= (others => '0');
         end loop;
       else
         obs_valid_r <= '0';
@@ -207,6 +233,9 @@ begin
         if obs_en_i = '1' and epoch_tick_i = '1' then
           obs_epoch_r      <= obs_epoch_r + 1;
           obs_valid_mask_r <= (others => '0');
+          obs_lock_quality_r <= (others => '0');
+          obs_first_prn_r  <= (others => '0');
+          obs_first_range_r<= (others => '0');
           valid_count_v    := 0;
           first_found_v    := false;
 
@@ -240,6 +269,7 @@ begin
 
           for i in 0 to G_NUM_CHANNELS - 1 loop
             obs_prn_r(i) <= chan_prn_i(i);
+            obs_cn0_dbhz_r(i) <= chan_cn0_dbhz_i(i);
             prn_idx_v := to_integer(chan_prn_i(i)) - 1;
 
             if prn_idx_v >= 0 and prn_idx_v <= 31 then
@@ -298,8 +328,27 @@ begin
             rr_blend_mps_v := 0.7 * rr_dopp_mps_v + 0.3 * rr_meas_mps_v;
             dopp_corr_hz_v := real_to_i32(-rr_blend_mps_v / C_L1_LAMBDA_M);
             obs_dopp_r(i) <= clamp_s16(dopp_corr_hz_v);
+            rr_mps_i_v := real_to_i32(rr_blend_mps_v);
+            obs_rate_mps_r(i) <= to_signed(rr_mps_i_v, 32);
+
+            carrier_step_cyc_v := -real(to_integer(chan_dopp_i(i))) * dt_s_v;
+            if prev_epoch_valid_r = '1' then
+              carrier_cyc_v := (real(to_integer(prev_carrier_cyc_r(i))) / 1000.0) + carrier_step_cyc_v;
+            else
+              carrier_cyc_v := carrier_step_cyc_v;
+            end if;
+            carrier_cyc_i_v := real_to_i32(carrier_cyc_v * 1000.0);
+            obs_carrier_cyc_r(i) <= to_signed(carrier_cyc_i_v, 32);
+            prev_carrier_cyc_r(i) <= to_signed(carrier_cyc_i_v, 32);
 
             lock_ok_v := (chan_alloc_i(i) = '1') and (chan_code_lock_i(i) = '1');
+            cn0_i_v := to_integer(chan_cn0_dbhz_i(i));
+            strong_lock_v := lock_ok_v and (chan_carrier_lock_i(i) = '1') and (cn0_i_v >= 24);
+            if strong_lock_v then
+              obs_lock_quality_r(i) <= '1';
+            else
+              obs_lock_quality_r(i) <= '0';
+            end if;
             range_ok_v := (pr_corr_m_v > 1.0E7) and (pr_corr_m_v < 5.0E7);
             rate_ok_v := abs(rr_blend_mps_v) < 5000.0;
 

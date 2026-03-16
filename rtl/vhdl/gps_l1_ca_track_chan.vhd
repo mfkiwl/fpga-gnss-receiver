@@ -40,7 +40,6 @@ end entity;
 architecture rtl of gps_l1_ca_track_chan is
   type int_arr_t is array (natural range <>) of integer;
 
-  constant C_LOCK_ENTER_GOOD_MS : integer := 3;
   constant C_PROMPT_MAG_MIN     : integer := 2500;
   constant C_CARR_LOCK_HYST_Q15 : integer := 2048; -- ~0.0625 hysteresis on lock metric.
   constant C_DLL_ERR_LOCK_MAX   : integer := 60000000;
@@ -49,7 +48,12 @@ architecture rtl of gps_l1_ca_track_chan is
   constant C_CARR_ERR_TRACK_MAX : integer := 100000000;
   constant C_CARR_ERR_NORM_GAIN : integer := 256;
   constant C_CARR_ERR_DBAND_PULLIN : integer := 24;
-  constant C_CARR_ERR_DBAND_LOCK   : integer := 8;
+  constant C_LOCK_SCORE_MAX     : integer := 255;
+  constant C_LOCK_SCORE_INC_BOTH: integer := 4;
+  constant C_LOCK_SCORE_INC_CODE: integer := 2;
+  constant C_LOCK_SCORE_DEC_CODE: integer := 6;
+  constant C_LOCK_SCORE_DEC_CARR: integer := 2;
+  constant C_PLL_ERR_GAIN_MIN   : integer := 4;
   constant C_CN0_M2_SCALE       : integer := 512;
   constant C_LOCK_SMOOTH_DIV    : integer := 8;
   constant C_CODE_FCW_STEP      : unsigned(31 downto 0) := x"00010000";
@@ -84,8 +88,7 @@ architecture rtl of gps_l1_ca_track_chan is
   signal prev_prompt_valid_r: std_logic := '0';
 
   signal ms_sample_cnt_r    : integer range 0 to C_SAMPLES_PER_MS - 1 := 0;
-  signal good_ms_cnt_r      : integer range 0 to 255 := 0;
-  signal lock_fail_cnt_r    : integer range 0 to 255 := 0;
+  signal lock_score_r       : integer range 0 to C_LOCK_SCORE_MAX := 0;
   signal m2_avg_r           : integer := 0;
   signal m4_avg_r           : integer := 0;
   signal nbd_avg_r          : integer := 0;
@@ -323,8 +326,6 @@ begin
     variable code_track_v       : boolean;
     variable carrier_enter_v    : boolean;
     variable carrier_track_v    : boolean;
-    variable good_enter_v       : boolean;
-    variable good_track_v       : boolean;
     variable fcw_floor          : unsigned(31 downto 0);
     variable fcw_ceil           : unsigned(31 downto 0);
     variable doppler_step_hz_i  : integer;
@@ -349,9 +350,12 @@ begin
     variable carrier_enter_th_i : integer;
     variable carrier_track_th_i : integer;
     variable max_lock_fail_v    : integer;
+    variable lock_enter_th_i    : integer;
+    variable lock_exit_th_i     : integer;
+    variable lock_score_i       : integer;
+    variable carrier_gain_i     : integer;
     variable cn0_inst_i         : integer;
     variable cn0_i              : integer;
-    variable cn0_report_i       : integer;
     variable cn0_valid_v        : boolean;
   begin
     if rising_edge(clk) then
@@ -375,8 +379,7 @@ begin
         prev_prompt_q_r     <= (others => '0');
         prev_prompt_valid_r <= '0';
         ms_sample_cnt_r     <= 0;
-        good_ms_cnt_r       <= 0;
-        lock_fail_cnt_r     <= 0;
+        lock_score_r        <= 0;
         m2_avg_r            <= 0;
         m4_avg_r            <= 0;
         nbd_avg_r           <= 0;
@@ -403,8 +406,7 @@ begin
           carrier_lock_r      <= '0';
           cn0_dbhz_r          <= (others => '0');
           ms_sample_cnt_r     <= 0;
-          good_ms_cnt_r       <= 0;
-          lock_fail_cnt_r     <= 0;
+          lock_score_r        <= 0;
           m2_avg_r            <= 0;
           m4_avg_r            <= 0;
           nbd_avg_r           <= 0;
@@ -431,8 +433,7 @@ begin
             carrier_lock_r      <= '0';
             cn0_dbhz_r          <= (others => '0');
             ms_sample_cnt_r     <= 0;
-            good_ms_cnt_r       <= 0;
-            lock_fail_cnt_r     <= 0;
+            lock_score_r        <= 0;
             m2_avg_r            <= 0;
             m4_avg_r            <= 0;
             nbd_avg_r           <= 0;
@@ -453,8 +454,7 @@ begin
             case state_r is
               when TRACK_IDLE =>
                 ms_sample_cnt_r     <= 0;
-                good_ms_cnt_r       <= 0;
-                lock_fail_cnt_r     <= 0;
+                lock_score_r        <= 0;
                 code_lock_r         <= '0';
                 carrier_lock_r      <= '0';
                 cn0_dbhz_r          <= (others => '0');
@@ -605,11 +605,8 @@ begin
                   elsif cn0_i > 99 then
                     cn0_i := 99;
                   end if;
-                  cn0_report_i := cn0_i;
-                  if code_lock_r = '0' then
-                    cn0_report_i := 0;
-                  end if;
-                  cn0_dbhz_r <= to_unsigned(cn0_report_i, cn0_dbhz_r'length);
+                  -- Keep reporting the estimator output in pull-in as well to aid debug/observability.
+                  cn0_dbhz_r <= to_unsigned(cn0_i, cn0_dbhz_r'length);
 
                   -- Carrier lock detector using cos(2*phase_error) ~= NBD/NBP.
                   nbd_sample_i := (prompt_i_s * prompt_i_s) - (prompt_q_s * prompt_q_s);
@@ -634,20 +631,29 @@ begin
                   end if;
                   carrier_lock_metric_r <= to_signed(carrier_metric_i, carrier_lock_metric_r'length);
 
-                  if prev_prompt_valid_r = '1' then
-                    prev_i_s := to_integer(shift_right(prev_prompt_i_r, 12));
-                    prev_q_s := to_integer(shift_right(prev_prompt_q_r, 12));
+                  if state_r = TRACK_LOCKED then
+                    -- PLL mode: use prompt phase discriminator once carrier is near lock.
                     curr_i_s := to_integer(shift_right(next_prompt_i, 12));
                     curr_q_s := to_integer(shift_right(next_prompt_q, 12));
-                    cross_i := prev_i_s * curr_q_s - prev_q_s * curr_i_s;
-                    dot_i   := prev_i_s * curr_i_s + prev_q_s * curr_q_s;
-                    carrier_err_norm_den_i := (abs_i(dot_i) / C_CARR_ERR_NORM_GAIN) + 1;
-                    carrier_err_i := cross_i / carrier_err_norm_den_i;
-                  else
-                    curr_i_s := to_integer(shift_right(next_prompt_i, 12));
-                    curr_q_s := to_integer(shift_right(next_prompt_q, 12));
-                    carrier_err_norm_den_i := (abs_i(curr_i_s) / 8) + 1;
+                    carrier_err_norm_den_i := (abs_i(curr_i_s) / C_CARR_ERR_NORM_GAIN) + 1;
                     carrier_err_i := curr_q_s / carrier_err_norm_den_i;
+                  else
+                    -- FLL pull-in mode: discriminate from prompt phase progression.
+                    if prev_prompt_valid_r = '1' then
+                      prev_i_s := to_integer(shift_right(prev_prompt_i_r, 12));
+                      prev_q_s := to_integer(shift_right(prev_prompt_q_r, 12));
+                      curr_i_s := to_integer(shift_right(next_prompt_i, 12));
+                      curr_q_s := to_integer(shift_right(next_prompt_q, 12));
+                      cross_i := prev_i_s * curr_q_s - prev_q_s * curr_i_s;
+                      dot_i   := prev_i_s * curr_i_s + prev_q_s * curr_q_s;
+                      carrier_err_norm_den_i := (abs_i(dot_i) / C_CARR_ERR_NORM_GAIN) + 1;
+                      carrier_err_i := cross_i / carrier_err_norm_den_i;
+                    else
+                      curr_i_s := to_integer(shift_right(next_prompt_i, 12));
+                      curr_q_s := to_integer(shift_right(next_prompt_q, 12));
+                      carrier_err_norm_den_i := (abs_i(curr_i_s) / 8) + 1;
+                      carrier_err_i := curr_q_s / carrier_err_norm_den_i;
+                    end if;
                   end if;
 
                   fcw_floor := C_CODE_NCO_FCW - C_CODE_FCW_DELTA_MAX;
@@ -667,22 +673,24 @@ begin
                     end if;
                   end if;
 
+                  dopp_i := to_integer(dopp_r);
                   if state_r = TRACK_LOCKED then
-                    doppler_step_hz_i := to_integer(dopp_step_lock_i);
-                    carrier_err_dband_i := C_CARR_ERR_DBAND_LOCK;
+                    carrier_gain_i := to_integer(dopp_step_lock_i);
+                    if carrier_gain_i < C_PLL_ERR_GAIN_MIN then
+                      carrier_gain_i := C_PLL_ERR_GAIN_MIN;
+                    end if;
+                    dopp_i := dopp_i - (carrier_err_i / carrier_gain_i);
                   else
                     doppler_step_hz_i := to_integer(dopp_step_pullin_i);
+                    if doppler_step_hz_i < 1 then
+                      doppler_step_hz_i := 1;
+                    end if;
                     carrier_err_dband_i := C_CARR_ERR_DBAND_PULLIN;
-                  end if;
-                  if doppler_step_hz_i < 1 then
-                    doppler_step_hz_i := 1;
-                  end if;
-
-                  dopp_i := to_integer(dopp_r);
-                  if carrier_err_i > carrier_err_dband_i then
-                    dopp_i := dopp_i - doppler_step_hz_i;
-                  elsif carrier_err_i < -carrier_err_dband_i then
-                    dopp_i := dopp_i + doppler_step_hz_i;
+                    if carrier_err_i > carrier_err_dband_i then
+                      dopp_i := dopp_i - doppler_step_hz_i;
+                    elsif carrier_err_i < -carrier_err_dband_i then
+                      dopp_i := dopp_i + doppler_step_hz_i;
+                    end if;
                   end if;
                   dopp_r <= clamp_s16(dopp_i);
 
@@ -702,29 +710,43 @@ begin
                                      (abs_i(carrier_err_i) < C_CARR_ERR_LOCK_MAX);
                   carrier_track_v := (carrier_metric_i >= carrier_track_th_i) and
                                      (abs_i(carrier_err_i) < C_CARR_ERR_TRACK_MAX);
-                  good_enter_v := code_enter_v;
-                  good_track_v := code_track_v;
-
-                  if good_enter_v then
-                    if good_ms_cnt_r < 255 then
-                      good_ms_cnt_r <= good_ms_cnt_r + 1;
-                    end if;
-                  else
-                    good_ms_cnt_r <= 0;
-                  end if;
                   max_lock_fail_v := to_integer(max_lock_fail_i);
-                  if max_lock_fail_v < 1 then
-                    max_lock_fail_v := 1;
+                  if max_lock_fail_v < 4 then
+                    max_lock_fail_v := 4;
+                  elsif max_lock_fail_v > (C_LOCK_SCORE_MAX - 8) then
+                    max_lock_fail_v := C_LOCK_SCORE_MAX - 8;
                   end if;
+                  lock_enter_th_i := max_lock_fail_v;
+                  lock_exit_th_i := lock_enter_th_i / 2;
+                  if lock_exit_th_i < 2 then
+                    lock_exit_th_i := 2;
+                  end if;
+
+                  lock_score_i := lock_score_r;
+                  if code_track_v and carrier_track_v then
+                    lock_score_i := lock_score_i + C_LOCK_SCORE_INC_BOTH;
+                  elsif code_track_v then
+                    lock_score_i := lock_score_i + C_LOCK_SCORE_INC_CODE;
+                  else
+                    lock_score_i := lock_score_i - C_LOCK_SCORE_DEC_CODE;
+                  end if;
+                  if not carrier_track_v then
+                    lock_score_i := lock_score_i - C_LOCK_SCORE_DEC_CARR;
+                  end if;
+                  if lock_score_i < 0 then
+                    lock_score_i := 0;
+                  elsif lock_score_i > C_LOCK_SCORE_MAX then
+                    lock_score_i := C_LOCK_SCORE_MAX;
+                  end if;
+                  lock_score_r <= lock_score_i;
 
                   if state_r = TRACK_PULLIN then
-                    if good_enter_v and carrier_enter_v and good_ms_cnt_r >= C_LOCK_ENTER_GOOD_MS then
+                    if code_enter_v and carrier_enter_v and lock_score_i >= lock_enter_th_i then
                       state_r        <= TRACK_LOCKED;
                       code_lock_r    <= '1';
                       carrier_lock_r <= '1';
-                      lock_fail_cnt_r <= 0;
                     else
-                      if good_enter_v then
+                      if code_enter_v then
                         code_lock_r <= '1';
                       else
                         code_lock_r <= '0';
@@ -734,31 +756,18 @@ begin
                       else
                         carrier_lock_r <= '0';
                       end if;
-                      lock_fail_cnt_r <= 0;
                     end if;
                   else
-                    if good_track_v then
-                      lock_fail_cnt_r <= 0;
+                    if lock_score_i <= lock_exit_th_i or (not code_track_v) then
+                      state_r        <= TRACK_PULLIN;
+                      code_lock_r    <= '0';
+                      carrier_lock_r <= '0';
+                    else
                       code_lock_r    <= '1';
                       if carrier_track_v then
                         carrier_lock_r <= '1';
                       else
                         carrier_lock_r <= '0';
-                      end if;
-                    else
-                      if lock_fail_cnt_r + 1 >= max_lock_fail_v then
-                        state_r        <= TRACK_PULLIN;
-                        code_lock_r    <= '0';
-                        carrier_lock_r <= '0';
-                        lock_fail_cnt_r <= 0;
-                      else
-                        lock_fail_cnt_r <= lock_fail_cnt_r + 1;
-                        code_lock_r    <= '1';
-                        if carrier_track_v then
-                          carrier_lock_r <= '1';
-                        else
-                          carrier_lock_r <= '0';
-                        end if;
                       end if;
                     end if;
                   end if;

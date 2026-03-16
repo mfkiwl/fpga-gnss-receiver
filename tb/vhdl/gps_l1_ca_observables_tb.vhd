@@ -19,9 +19,11 @@ architecture tb of gps_l1_ca_observables_tb is
   signal tow_seconds_i      : unsigned(31 downto 0) := (others => '0');
   signal chan_alloc_i       : std_logic_vector(C_NUM_CH - 1 downto 0) := (others => '0');
   signal chan_code_lock_i   : std_logic_vector(C_NUM_CH - 1 downto 0) := (others => '0');
+  signal chan_carrier_lock_i: std_logic_vector(C_NUM_CH - 1 downto 0) := (others => '0');
   signal chan_prn_i         : u6_arr_t(0 to C_NUM_CH - 1);
   signal chan_dopp_i        : s16_arr_t(0 to C_NUM_CH - 1);
   signal chan_code_i        : u11_arr_t(0 to C_NUM_CH - 1);
+  signal chan_cn0_dbhz_i    : u8_arr_t(0 to C_NUM_CH - 1);
   signal eph_valid_prn_i    : std_logic_vector(31 downto 0) := (others => '0');
   signal sat_x_ecef_i       : s32_arr_t(0 to 31);
   signal sat_y_ecef_i       : s32_arr_t(0 to 31);
@@ -39,6 +41,10 @@ architecture tb of gps_l1_ca_observables_tb is
   signal obs_prn_o          : u6_arr_t(0 to C_NUM_CH - 1);
   signal obs_dopp_o         : s16_arr_t(0 to C_NUM_CH - 1);
   signal obs_range_o        : u32_arr_t(0 to C_NUM_CH - 1);
+  signal obs_rate_mps_o     : s32_arr_t(0 to C_NUM_CH - 1);
+  signal obs_carrier_cyc_o  : s32_arr_t(0 to C_NUM_CH - 1);
+  signal obs_cn0_dbhz_o     : u8_arr_t(0 to C_NUM_CH - 1);
+  signal obs_lock_quality_o : std_logic_vector(C_NUM_CH - 1 downto 0);
   signal obs_sat_x_o        : s32_arr_t(0 to C_NUM_CH - 1);
   signal obs_sat_y_o        : s32_arr_t(0 to C_NUM_CH - 1);
   signal obs_sat_z_o        : s32_arr_t(0 to C_NUM_CH - 1);
@@ -64,9 +70,11 @@ begin
       tow_seconds_i      => tow_seconds_i,
       chan_alloc_i       => chan_alloc_i,
       chan_code_lock_i   => chan_code_lock_i,
+      chan_carrier_lock_i=> chan_carrier_lock_i,
       chan_prn_i         => chan_prn_i,
       chan_dopp_i        => chan_dopp_i,
       chan_code_i        => chan_code_i,
+      chan_cn0_dbhz_i    => chan_cn0_dbhz_i,
       eph_valid_prn_i    => eph_valid_prn_i,
       sat_x_ecef_i       => sat_x_ecef_i,
       sat_y_ecef_i       => sat_y_ecef_i,
@@ -83,6 +91,10 @@ begin
       obs_prn_o          => obs_prn_o,
       obs_dopp_o         => obs_dopp_o,
       obs_range_o        => obs_range_o,
+      obs_rate_mps_o     => obs_rate_mps_o,
+      obs_carrier_cyc_o  => obs_carrier_cyc_o,
+      obs_cn0_dbhz_o     => obs_cn0_dbhz_o,
+      obs_lock_quality_o => obs_lock_quality_o,
       obs_sat_x_o        => obs_sat_x_o,
       obs_sat_y_o        => obs_sat_y_o,
       obs_sat_z_o        => obs_sat_z_o,
@@ -108,6 +120,8 @@ begin
     chan_dopp_i(1) <= (others => '0');
     chan_code_i(0) <= (others => '0');
     chan_code_i(1) <= (others => '0');
+    chan_cn0_dbhz_i(0) <= to_unsigned(35, 8);
+    chan_cn0_dbhz_i(1) <= to_unsigned(20, 8);
 
     sat_x_ecef_i(0) <= to_signed(20000000, 32);
     sat_y_ecef_i(0) <= (others => '0');
@@ -122,6 +136,7 @@ begin
     obs_en_i <= '1';
     chan_alloc_i <= "01";
     chan_code_lock_i <= "01";
+    chan_carrier_lock_i <= "01";
     eph_valid_prn_i(0) <= '1';
 
     -- Epoch 1: valid observation expected on channel 0.
@@ -144,6 +159,10 @@ begin
     dopp_i := to_integer(obs_dopp_o(0));
     assert dopp_i > 850 and dopp_i < 1150
       report "Expected Doppler observable to stay near input Doppler on first epoch." severity failure;
+    assert to_integer(obs_cn0_dbhz_o(0)) = 35
+      report "Expected CN0 metadata passthrough from channel status." severity failure;
+    assert obs_lock_quality_o(0) = '1'
+      report "Expected lock-quality metadata asserted for strong lock channel." severity failure;
 
     -- Epoch 2: remove ephemeris validity and expect no valid observations.
     eph_valid_prn_i(0) <= '0';

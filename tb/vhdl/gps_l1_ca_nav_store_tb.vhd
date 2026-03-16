@@ -151,11 +151,11 @@ begin
     end loop;
     rst_n <= '1';
 
-    -- Confirm fallback satellite seeds are initialized.
+    -- Confirm satellite state is zeroed until true ephemeris decode.
     wait until rising_edge(clk);
-    assert to_integer(sat_x_ecef_o(0)) = -13000000 report "Unexpected seeded sat_x for PRN1." severity failure;
-    assert to_integer(sat_y_ecef_o(0)) = 10000000 report "Unexpected seeded sat_y for PRN1." severity failure;
-    assert to_integer(sat_z_ecef_o(0)) = -9000000 report "Unexpected seeded sat_z for PRN1." severity failure;
+    assert to_integer(sat_x_ecef_o(0)) = 0 report "Expected zero sat_x before ephemeris decode." severity failure;
+    assert to_integer(sat_y_ecef_o(0)) = 0 report "Expected zero sat_y before ephemeris decode." severity failure;
+    assert to_integer(sat_z_ecef_o(0)) = 0 report "Expected zero sat_z before ephemeris decode." severity failure;
 
     nav_en_i <= '1';
 

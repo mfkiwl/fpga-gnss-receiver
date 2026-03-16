@@ -20,7 +20,7 @@ architecture tb of gps_l1_ca_chan_bank_tb is
   signal s_i                : signed(15 downto 0) := (others => '0');
   signal s_q                : signed(15 downto 0) := (others => '0');
   signal min_cn0_dbhz_i     : unsigned(7 downto 0) := to_unsigned(20, 8);
-  signal carrier_lock_th_i  : signed(15 downto 0) := to_signed(19661, 16);
+  signal carrier_lock_th_i  : signed(15 downto 0) := to_signed(16384, 16);
   signal max_lock_fail_i    : unsigned(7 downto 0) := to_unsigned(20, 8);
   signal dopp_step_pullin_i : unsigned(15 downto 0) := to_unsigned(80, 16);
   signal dopp_step_lock_i   : unsigned(15 downto 0) := to_unsigned(20, 16);

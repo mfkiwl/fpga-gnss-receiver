@@ -26,6 +26,11 @@ architecture tb of gps_l1_ca_acq_tb is
   signal doppler_max    : signed(15 downto 0) := to_signed(2000, 16);
   signal doppler_step   : signed(15 downto 0) := to_signed(250, 16);
   signal detect_thresh  : unsigned(31 downto 0) := (others => '0');
+  signal coh_ms_i       : unsigned(7 downto 0) := to_unsigned(1, 8);
+  signal noncoh_dwells_i: unsigned(7 downto 0) := to_unsigned(1, 8);
+  signal doppler_bins_i : unsigned(7 downto 0) := to_unsigned(1, 8);
+  signal code_bins_i    : unsigned(7 downto 0) := to_unsigned(1, 8);
+  signal code_step_i    : unsigned(10 downto 0) := to_unsigned(1, 11);
   signal s_valid        : std_logic := '0';
   signal s_i            : signed(15 downto 0) := (others => '0');
   signal s_q            : signed(15 downto 0) := (others => '0');
@@ -55,6 +60,11 @@ begin
       doppler_max   => doppler_max,
       doppler_step  => doppler_step,
       detect_thresh => detect_thresh,
+      coh_ms_i      => coh_ms_i,
+      noncoh_dwells_i => noncoh_dwells_i,
+      doppler_bin_count_i => doppler_bins_i,
+      code_bin_count_i => code_bins_i,
+      code_bin_step_i => code_step_i,
       s_valid       => s_valid,
       s_i           => s_i,
       s_q           => s_q,

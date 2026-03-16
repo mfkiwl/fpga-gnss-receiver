@@ -29,11 +29,17 @@ entity gps_l1_ca_pvt is
     pvt_lat_e7_o     : out signed(31 downto 0);
     pvt_lon_e7_o     : out signed(31 downto 0);
     pvt_height_mm_o  : out signed(31 downto 0);
-    pvt_cbias_o      : out signed(31 downto 0)
+    pvt_cbias_o      : out signed(31 downto 0);
+    pvt_resid_rms_m_o: out unsigned(31 downto 0);
+    pvt_gdop_x100_o  : out unsigned(15 downto 0);
+    pvt_pdop_x100_o  : out unsigned(15 downto 0);
+    pvt_hdop_x100_o  : out unsigned(15 downto 0);
+    pvt_vdop_x100_o  : out unsigned(15 downto 0)
   );
 end entity;
 
 architecture rtl of gps_l1_ca_pvt is
+  subtype u16_t is unsigned(15 downto 0);
   type real_vec4_t is array (0 to 3) of real;
   type real_mat4_t is array (0 to 3, 0 to 3) of real;
 
@@ -43,6 +49,11 @@ architecture rtl of gps_l1_ca_pvt is
   signal pvt_lon_e7_r    : signed(31 downto 0) := (others => '0');
   signal pvt_height_mm_r : signed(31 downto 0) := (others => '0');
   signal pvt_cbias_r     : signed(31 downto 0) := (others => '0');
+  signal pvt_resid_rms_m_r : unsigned(31 downto 0) := (others => '0');
+  signal pvt_gdop_x100_r : unsigned(15 downto 0) := (others => '0');
+  signal pvt_pdop_x100_r : unsigned(15 downto 0) := (others => '0');
+  signal pvt_hdop_x100_r : unsigned(15 downto 0) := (others => '0');
+  signal pvt_vdop_x100_r : unsigned(15 downto 0) := (others => '0');
 
   signal rx_x_m_r        : signed(31 downto 0) := (others => '0');
   signal rx_y_m_r        : signed(31 downto 0) := (others => '0');
@@ -60,6 +71,21 @@ architecture rtl of gps_l1_ca_pvt is
       return integer(y + 0.5);
     else
       return integer(y - 0.5);
+    end if;
+  end function;
+
+  function real_to_u16(x : real) return u16_t is
+    variable y : real;
+    variable iv : integer;
+  begin
+    y := x;
+    if y <= 0.0 then
+      return (others => '0');
+    elsif y >= 65535.0 then
+      return (others => '1');
+    else
+      iv := integer(y + 0.5);
+      return to_unsigned(iv, 16);
     end if;
   end function;
 
@@ -148,6 +174,11 @@ begin
   pvt_lon_e7_o     <= pvt_lon_e7_r;
   pvt_height_mm_o  <= pvt_height_mm_r;
   pvt_cbias_o      <= pvt_cbias_r;
+  pvt_resid_rms_m_o<= pvt_resid_rms_m_r;
+  pvt_gdop_x100_o  <= pvt_gdop_x100_r;
+  pvt_pdop_x100_o  <= pvt_pdop_x100_r;
+  pvt_hdop_x100_o  <= pvt_hdop_x100_r;
+  pvt_vdop_x100_o  <= pvt_vdop_x100_r;
 
   process (clk)
     constant C_MAX_ITER           : integer := 8;
@@ -216,6 +247,14 @@ begin
     variable lon_deg     : real;
     variable h_out_m     : real;
     variable update_ok_v : boolean;
+    variable dop_xx_v    : real;
+    variable dop_yy_v    : real;
+    variable dop_zz_v    : real;
+    variable dop_tt_v    : real;
+    variable gdop_v      : real;
+    variable pdop_v      : real;
+    variable hdop_v      : real;
+    variable vdop_v      : real;
   begin
     if rising_edge(clk) then
       if rst_n = '0' then
@@ -225,6 +264,11 @@ begin
         pvt_lon_e7_r    <= (others => '0');
         pvt_height_mm_r <= (others => '0');
         pvt_cbias_r     <= (others => '0');
+        pvt_resid_rms_m_r <= (others => '0');
+        pvt_gdop_x100_r <= (others => '0');
+        pvt_pdop_x100_r <= (others => '0');
+        pvt_hdop_x100_r <= (others => '0');
+        pvt_vdop_x100_r <= (others => '0');
         rx_x_m_r        <= (others => '0');
         rx_y_m_r        <= (others => '0');
         rx_z_m_r        <= (others => '0');
@@ -424,7 +468,43 @@ begin
               h_out_m := -1000.0;
             end if;
 
+            if hth(0, 0) > 1.0E-9 then
+              dop_xx_v := 1.0 / hth(0, 0);
+            else
+              dop_xx_v := 0.0;
+            end if;
+            if hth(1, 1) > 1.0E-9 then
+              dop_yy_v := 1.0 / hth(1, 1);
+            else
+              dop_yy_v := 0.0;
+            end if;
+            if hth(2, 2) > 1.0E-9 then
+              dop_zz_v := 1.0 / hth(2, 2);
+            else
+              dop_zz_v := 0.0;
+            end if;
+            if hth(3, 3) > 1.0E-9 then
+              dop_tt_v := 1.0 / hth(3, 3);
+            else
+              dop_tt_v := 0.0;
+            end if;
+
+            hdop_v := sqrt(dop_xx_v + dop_yy_v);
+            vdop_v := sqrt(dop_zz_v);
+            pdop_v := sqrt(dop_xx_v + dop_yy_v + dop_zz_v);
+            gdop_v := sqrt(dop_xx_v + dop_yy_v + dop_zz_v + dop_tt_v);
+
             pvt_sats_used_r <= to_unsigned(used_cnt_fin, pvt_sats_used_r'length);
+            if rms_v < 0.0 then
+              pvt_resid_rms_m_r <= (others => '0');
+            else
+              pvt_resid_rms_m_r <= to_unsigned(real_to_i32(rms_v), 32);
+            end if;
+            pvt_gdop_x100_r <= real_to_u16(gdop_v * 100.0);
+            pvt_pdop_x100_r <= real_to_u16(pdop_v * 100.0);
+            pvt_hdop_x100_r <= real_to_u16(hdop_v * 100.0);
+            pvt_vdop_x100_r <= real_to_u16(vdop_v * 100.0);
+
             if update_ok_v and used_cnt_fin >= 4 and rms_v < C_ABS_RESID_MAX_M then
               rx_x_m_r <= to_signed(real_to_i32(x_est), 32);
               rx_y_m_r <= to_signed(real_to_i32(y_est), 32);
@@ -453,7 +533,19 @@ begin
             -- pragma translate_on
           else
             pvt_valid_r <= '0';
+            pvt_resid_rms_m_r <= (others => '0');
+            pvt_gdop_x100_r <= (others => '0');
+            pvt_pdop_x100_r <= (others => '0');
+            pvt_hdop_x100_r <= (others => '0');
+            pvt_vdop_x100_r <= (others => '0');
           end if;
+        else
+          pvt_valid_r <= '0';
+          pvt_resid_rms_m_r <= (others => '0');
+          pvt_gdop_x100_r <= (others => '0');
+          pvt_pdop_x100_r <= (others => '0');
+          pvt_hdop_x100_r <= (others => '0');
+          pvt_vdop_x100_r <= (others => '0');
         end if;
       end if;
     end if;

@@ -13,25 +13,25 @@
 
 | Metric | Target | Current | Status |
 | --- | --- | --- | --- |
-| First-fix presence | both have >=1 fix | PASS (sim=17, ref=13) | PASS |
-| Horizontal RMS error | <= 25 m | 17515301.418 m | FAIL |
-| Vertical RMS error | <= 40 m | 1093.383 m | FAIL |
-| 3D error p95 | <= 75 m | 17515310.170 m | FAIL |
-| Static jitter RMS | <= 15 m | 0.000 m | PASS |
-| Min observations used | >= 4 | 4 | PASS |
+| First-fix presence | both have >=1 fix | FAIL (sim=0, ref=13) | FAIL |
+| Horizontal RMS error | <= 25 m | N/A (no paired epochs) | FAIL |
+| Vertical RMS error | <= 40 m | N/A (no paired epochs) | FAIL |
+| 3D error p95 | <= 75 m | N/A (no paired epochs) | FAIL |
+| Static jitter RMS | <= 15 m | N/A (no fixes) | FAIL |
+| Min observations used | >= 4 | N/A (no fixes) | FAIL |
 
 ### Block De-Scaffolding
 
 | Block | Pass Condition | Current Status |
 | --- | --- | --- |
-| Acquisition | Correlation-based PRN/code/doppler output | PASS (Step B complete) |
-| Tracking | DLL/FLL/PLL discriminator-driven lock | PASS (Step B complete) |
-| NAV decode | Word/parity/subframe decode + ephemeris fields | PASS (Step C implemented) |
-| Observables | Timing-consistent pseudorange/rate + corrections | PASS (Step D implemented) |
-| PVT | Weighted iterative LS + residual gating | PASS (Step E implemented) |
+| Acquisition | Correlation-based PRN/code/doppler output + runtime accumulation control | PASS (explicit code/doppler bin search) |
+| Tracking | DLL/FLL/PLL discriminator-driven lock | PASS (FLL pull-in + PLL lock mode + metric-state lock score) |
+| NAV decode | Word/parity/subframe decode + ephemeris fields | PASS functional; structural split into dedicated sub-entities still pending |
+| Observables | Timing-consistent pseudorange/rate + corrections + metadata outputs | PASS (rate/carrier/CN0/lock-quality surfaced) |
+| PVT | Weighted iterative LS + residual gating + solution quality outputs | PASS (RMS residual + DOP approximations on interface) |
 
 ## Notes
 - This file is the Phase 3 scoreboard companion to `Phase-3-Plans-and-Goal.md`.
 - The authoritative numeric values are produced by `sim/phase3_compare.py` from simulation logs and `tb/txt/expected_output.txt`.
-- Current values above were produced on 2026-03-16 with `make phase3-eval` after Step E updates.
-- Step D now applies TOF + correction pipeline and Step E applies robust weighted LS, but Phase 3 metrics are still dominated by pre-ephemeris fallback geometry in short smoke runs.
+- Current values above were produced on 2026-03-16 with `make phase3-eval` after acquisition/tracking/observables/PVT interface upgrades.
+- Pre-ephemeris fallback satellite geometry has been removed from reset behavior. Alignment currently fails because no end-to-end fixes are produced in the smoke run window.

@@ -149,8 +149,8 @@ begin
     ctrl_write(16#10#, x"0000D8F0"); -- doppler min -10000
     ctrl_write(16#14#, x"00002710"); -- doppler max +10000
     ctrl_write(16#18#, x"000000FA"); -- doppler step 250
-    ctrl_write(16#1C#, x"00000016"); -- min C/N0 threshold 22 dB-Hz
-    ctrl_write(16#20#, x"00004CCD"); -- carrier lock threshold Q15 (~0.60)
+    ctrl_write(16#1C#, x"00000041"); -- min C/N0 threshold 65 dB-Hz
+    ctrl_write(16#20#, x"00004000"); -- carrier lock threshold Q15 (0.50)
     ctrl_write(16#24#, x"00000032"); -- max_lock_fail = 50 epochs
 
     if G_FAST_MODE then

@@ -37,6 +37,11 @@ entity gps_l1_ca_ctrl_phase2 is
     pvt_lon_e7_i       : in  signed(31 downto 0);
     pvt_height_mm_i    : in  signed(31 downto 0);
     pvt_cbias_i        : in  signed(31 downto 0);
+    pvt_resid_rms_m_i  : in  unsigned(31 downto 0);
+    pvt_gdop_x100_i    : in  unsigned(15 downto 0);
+    pvt_pdop_x100_i    : in  unsigned(15 downto 0);
+    pvt_hdop_x100_i    : in  unsigned(15 downto 0);
+    pvt_vdop_x100_i    : in  unsigned(15 downto 0);
     uart_busy_i        : in  std_logic;
 
     core_en_o          : out std_logic;
@@ -59,7 +64,12 @@ entity gps_l1_ca_ctrl_phase2 is
     carrier_lock_th_o  : out signed(15 downto 0);
     max_lock_fail_o    : out unsigned(7 downto 0);
     dopp_step_pullin_o : out unsigned(15 downto 0);
-    dopp_step_lock_o   : out unsigned(15 downto 0)
+    dopp_step_lock_o   : out unsigned(15 downto 0);
+    acq_coh_ms_o       : out unsigned(7 downto 0);
+    acq_noncoh_dwells_o: out unsigned(7 downto 0);
+    acq_dopp_bins_o    : out unsigned(7 downto 0);
+    acq_code_bins_o    : out unsigned(7 downto 0);
+    acq_code_step_o    : out unsigned(10 downto 0)
   );
 end entity;
 
@@ -87,10 +97,15 @@ architecture rtl of gps_l1_ca_ctrl_phase2 is
   signal doppler_step_r    : signed(15 downto 0) := to_signed(500, 16);
   signal detect_thresh_r   : unsigned(31 downto 0) := to_unsigned(10000, 32);
   signal min_cn0_dbhz_r    : unsigned(7 downto 0) := to_unsigned(22, 8);
-  signal carrier_lock_th_r : signed(15 downto 0) := to_signed(19661, 16); -- ~0.60 in Q15
+  signal carrier_lock_th_r : signed(15 downto 0) := to_signed(16384, 16); -- 0.50 in Q15
   signal max_lock_fail_r   : unsigned(7 downto 0) := to_unsigned(50, 8);
   signal dopp_step_pullin_r: unsigned(15 downto 0) := to_unsigned(80, 16);
   signal dopp_step_lock_r  : unsigned(15 downto 0) := to_unsigned(20, 16);
+  signal acq_coh_ms_r      : unsigned(7 downto 0) := to_unsigned(1, 8);
+  signal acq_noncoh_dwells_r : unsigned(7 downto 0) := to_unsigned(2, 8);
+  signal acq_dopp_bins_r   : unsigned(7 downto 0) := to_unsigned(9, 8);
+  signal acq_code_bins_r   : unsigned(7 downto 0) := to_unsigned(8, 8);
+  signal acq_code_step_r   : unsigned(10 downto 0) := to_unsigned(64, 11);
 begin
   ctrl_wack <= ctrl_wack_r;
   ctrl_rack <= ctrl_rack_r;
@@ -117,6 +132,11 @@ begin
   max_lock_fail_o    <= max_lock_fail_r;
   dopp_step_pullin_o <= dopp_step_pullin_r;
   dopp_step_lock_o   <= dopp_step_lock_r;
+  acq_coh_ms_o       <= acq_coh_ms_r;
+  acq_noncoh_dwells_o<= acq_noncoh_dwells_r;
+  acq_dopp_bins_o    <= acq_dopp_bins_r;
+  acq_code_bins_o    <= acq_code_bins_r;
+  acq_code_step_o    <= acq_code_step_r;
 
   process (clk)
   begin
@@ -168,6 +188,14 @@ begin
               dopp_step_pullin_r <= unsigned(ctrl_wdata(15 downto 0));
             when 16#30# =>
               dopp_step_lock_r <= unsigned(ctrl_wdata(15 downto 0));
+            when 16#34# =>
+              acq_coh_ms_r <= unsigned(ctrl_wdata(7 downto 0));
+            when 16#38# =>
+              acq_noncoh_dwells_r <= unsigned(ctrl_wdata(7 downto 0));
+            when 16#3C# =>
+              acq_dopp_bins_r <= unsigned(ctrl_wdata(7 downto 0));
+              acq_code_bins_r <= unsigned(ctrl_wdata(15 downto 8));
+              acq_code_step_r <= unsigned(ctrl_wdata(26 downto 16));
             when others =>
               null;
           end case;
@@ -216,6 +244,14 @@ begin
         rd(15 downto 0) := std_logic_vector(dopp_step_pullin_r);
       when 16#30# =>
         rd(15 downto 0) := std_logic_vector(dopp_step_lock_r);
+      when 16#34# =>
+        rd(7 downto 0) := std_logic_vector(acq_coh_ms_r);
+      when 16#38# =>
+        rd(7 downto 0) := std_logic_vector(acq_noncoh_dwells_r);
+      when 16#3C# =>
+        rd(7 downto 0) := std_logic_vector(acq_dopp_bins_r);
+        rd(15 downto 8) := std_logic_vector(acq_code_bins_r);
+        rd(26 downto 16) := std_logic_vector(acq_code_step_r);
       when 16#40# =>
         rd(0) := acq_done_i;
         rd(1) := acq_success_i;
@@ -242,6 +278,14 @@ begin
         rd := std_logic_vector(pvt_height_mm_i);
       when 16#64# =>
         rd := std_logic_vector(pvt_cbias_i);
+      when 16#68# =>
+        rd := std_logic_vector(pvt_resid_rms_m_i);
+      when 16#6C# =>
+        rd(15 downto 0) := std_logic_vector(pvt_gdop_x100_i);
+        rd(31 downto 16) := std_logic_vector(pvt_pdop_x100_i);
+      when 16#70# =>
+        rd(15 downto 0) := std_logic_vector(pvt_hdop_x100_i);
+        rd(31 downto 16) := std_logic_vector(pvt_vdop_x100_i);
       when others =>
         null;
     end case;
