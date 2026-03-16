@@ -201,6 +201,22 @@ begin
         severity failure;
     end procedure;
 
+    procedure run_fullspace_prn_case(
+      prn_v     : in integer;
+      thresh_v  : in unsigned(31 downto 0);
+      case_name : in string
+    ) is
+    begin
+      run_prn_case(prn_v, thresh_v, case_name);
+      log_msg(case_name & " result_code=" &
+              integer'image(to_integer(result_code)) &
+              ", result_dopp=" & integer'image(to_integer(result_dopp)));
+      assert result_code /= to_unsigned(0, result_code'length) or
+             result_dopp /= to_signed(0, result_dopp'length)
+        report case_name & ": expected non-zero code or Doppler estimate."
+        severity failure;
+    end procedure;
+
     variable seen_done : boolean;
     variable read_status : file_open_status;
     variable b0          : character;
@@ -212,6 +228,7 @@ begin
     variable decim       : integer := 1;
     variable run1_metric_v      : unsigned(31 downto 0) := (others => '0');
     variable realistic_thresh_v : unsigned(31 downto 0) := (others => '0');
+    variable fullspace_thresh_v : unsigned(31 downto 0) := (others => '0');
     variable step_hz_v                 : integer := 1;
     variable full_dopp_bins_v          : integer := 1;
     variable full_space_samples_req_v  : integer := 0;
@@ -452,7 +469,7 @@ begin
     assert result_dopp >= doppler_min and result_dopp <= doppler_max
       report "Estimated Doppler should stay within configured range in third run." severity failure;
 
-    -- Fourth run: full code-Doppler search space for PRN 1 (file-input mode).
+    -- Fourth and later runs: full code-Doppler search space for PRNs found in stimulus file.
     if G_USE_FILE_INPUT then
       step_hz_v := abs(to_integer(doppler_step));
       if step_hz_v < 1 then
@@ -476,14 +493,18 @@ begin
       code_bins_i <= to_unsigned(64, code_bins_i'length);
       code_step_i <= to_unsigned(16, code_step_i'length);
       doppler_bins_i <= to_unsigned(full_dopp_bins_v, doppler_bins_i'length);
-      run_prn_case(1, realistic_thresh_v, "Run4 PRN 1 full code-doppler");
-      log_msg("Run4 PRN 1 full code-doppler result_code=" &
-              integer'image(to_integer(result_code)) &
-              ", result_dopp=" & integer'image(to_integer(result_dopp)));
-      assert result_code /= to_unsigned(0, result_code'length) or
-             result_dopp /= to_signed(0, result_dopp'length)
-        report "Expected non-zero code or Doppler estimate in full-space PRN 1 run."
-        severity failure;
+      run_fullspace_prn_case(1, realistic_thresh_v, "Run4 PRN 1 full code-doppler");
+
+      -- Derive a robust non-zero threshold from full-space PRN 1 before testing remaining PRNs.
+      fullspace_thresh_v := shift_right(result_metric, 4);
+      if fullspace_thresh_v = to_unsigned(0, fullspace_thresh_v'length) then
+        fullspace_thresh_v := to_unsigned(1, fullspace_thresh_v'length);
+      end if;
+
+      run_fullspace_prn_case(20, fullspace_thresh_v, "Run5 PRN 20 full code-doppler");
+      run_fullspace_prn_case(32, fullspace_thresh_v, "Run6 PRN 32 full code-doppler");
+      run_fullspace_prn_case(17, fullspace_thresh_v, "Run7 PRN 17 full code-doppler");
+      run_fullspace_prn_case(11, fullspace_thresh_v, "Run8 PRN 11 full code-doppler");
     else
       log_msg("Skipping full code-doppler PRN 1 run when not using file input.");
     end if;
