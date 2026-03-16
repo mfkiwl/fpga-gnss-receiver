@@ -7,6 +7,7 @@ NVC_STOP_TIME="${NVC_STOP_TIME:-40ms}"
 NVC_WAVE_FILE="${NVC_WAVE_FILE:-sim/gps_l1_ca_phase2_tb.fst}"
 TB_GENERIC_ARGS="${TB_GENERIC_ARGS:-}"
 FAST_MODE="${FAST_MODE:-0}"
+NVC_ENABLE_WAVE="${NVC_ENABLE_WAVE:-1}"
 
 ./lint/lint_vhdl.sh
 
@@ -24,6 +25,21 @@ if command -v nvc >/dev/null 2>&1; then
     echo "    FAST_MODE enabled (no wave dump, reduced TB work)"
     if [[ "${TB_GENERIC_ARGS}" != *"G_FAST_MODE"* ]]; then
       tb_generic_argv+=("-gG_FAST_MODE=true")
+    fi
+  fi
+
+  wave_dump_enabled=1
+  if [[ "${FAST_MODE}" == "1" || "${FAST_MODE}" == "true" || "${FAST_MODE}" == "TRUE" ]]; then
+    wave_dump_enabled=0
+  elif [[ "${NVC_ENABLE_WAVE}" == "0" || "${NVC_ENABLE_WAVE}" == "false" || "${NVC_ENABLE_WAVE}" == "FALSE" ]]; then
+    wave_dump_enabled=0
+  fi
+
+  if [[ "${TB_GENERIC_ARGS}" != *"G_ENABLE_WAVE_DUMP"* ]]; then
+    if [[ "${wave_dump_enabled}" == "1" ]]; then
+      tb_generic_argv+=("-gG_ENABLE_WAVE_DUMP=true")
+    else
+      tb_generic_argv+=("-gG_ENABLE_WAVE_DUMP=false")
     fi
   fi
 
@@ -48,8 +64,10 @@ if command -v nvc >/dev/null 2>&1; then
     )
   fi
 
-  if [[ "${FAST_MODE}" != "1" && "${FAST_MODE}" != "true" && "${FAST_MODE}" != "TRUE" ]]; then
+  if [[ "${wave_dump_enabled}" == "1" ]]; then
     nvc_cmd+=(--wave="${NVC_WAVE_FILE}")
+  else
+    echo "    Wave dump disabled."
   fi
 
   "${nvc_cmd[@]}"

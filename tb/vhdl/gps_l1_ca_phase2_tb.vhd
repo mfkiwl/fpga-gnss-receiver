@@ -11,7 +11,8 @@ entity gps_l1_ca_phase2_tb is
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
     G_MAX_FILE_SAMPLES    : integer := 400000000;
     G_REQUIRE_PVT         : boolean := false;
-    G_FAST_MODE           : boolean := false
+    G_FAST_MODE           : boolean := false;
+    G_ENABLE_WAVE_DUMP    : boolean := true
   );
 end entity;
 
@@ -142,6 +143,10 @@ begin
     rst_n <= '1';
     wait for 100 ns;
 
+    if not G_ENABLE_WAVE_DUMP then
+      log_msg("Phase 2 TB: wave dump disabled by configuration.");
+    end if;
+
     -- Phase 2 configuration.
     ctrl_write(16#04#, x"0000051F"); -- ch mask 0x1F, preferred count 5
     ctrl_write(16#08#, x"00002001"); -- PRN range 1..32
@@ -149,7 +154,7 @@ begin
     ctrl_write(16#10#, x"0000D8F0"); -- doppler min -10000
     ctrl_write(16#14#, x"00002710"); -- doppler max +10000
     ctrl_write(16#18#, x"000000FA"); -- doppler step 250
-    ctrl_write(16#1C#, x"00000041"); -- min C/N0 threshold 65 dB-Hz
+    ctrl_write(16#1C#, x"00000014"); -- min C/N0 threshold 20 dB-Hz
     ctrl_write(16#20#, x"00004000"); -- carrier lock threshold Q15 (0.50)
     ctrl_write(16#24#, x"00000032"); -- max_lock_fail = 50 epochs
 
