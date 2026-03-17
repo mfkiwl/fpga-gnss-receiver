@@ -2,6 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.gps_l1_ca_pkg.all;
+use work.gps_l1_ca_log_pkg.all;
 use work.gps_l1_ca_nco_pkg.all;
 
 entity gps_l1_ca_acq_td is
@@ -58,6 +59,8 @@ architecture rtl of gps_l1_ca_acq_td is
   constant C_MAX_CODE_BINS    : integer := 64;
   constant C_MAX_DOPP_BINS    : integer := 33;
   constant C_MAX_BINS         : integer := C_MAX_CODE_BINS * C_MAX_DOPP_BINS;
+  -- Simulation debug knob: print TD acquisition search attempts.
+  constant C_LOG_TD_ACQ_ATTEMPTS : boolean := true;
 
   type sample_arr_t is array (0 to C_SAMPLES_PER_MS - 1) of signed(15 downto 0);
   type metric_arr_t is array (0 to C_MAX_BINS - 1) of unsigned(31 downto 0);
@@ -165,6 +168,14 @@ architecture rtl of gps_l1_ca_acq_td is
     else
       return to_signed(x, 16);
     end if;
+  end function;
+
+  function u32_img(x : unsigned(31 downto 0)) return string is
+  begin
+    if x(31) = '1' then
+      return "0x" & to_hstring(std_logic_vector(x));
+    end if;
+    return integer'image(to_integer(x));
   end function;
 
   function carr_fcw_from_hz(dopp_hz : signed(15 downto 0)) return signed is
@@ -660,6 +671,23 @@ begin
             else
               acq_success_r  <= '0';
             end if;
+            -- pragma translate_off
+            if C_LOG_TD_ACQ_ATTEMPTS then
+              if best_metric_r >= detect_thresh then
+                log_msg("ACQ_TD", "success: best_prn=" & integer'image(to_integer(best_prn_r)) &
+                                 ", best_metric=" & u32_img(best_metric_r) &
+                                 ", best_code=" & integer'image(to_integer(best_code_r)) &
+                                 ", best_dopp=" & integer'image(to_integer(best_dopp_r)) &
+                                 ", detect_thresh=" & u32_img(detect_thresh));
+              else
+                log_msg("ACQ_TD", "failure: best_prn=" & integer'image(to_integer(best_prn_r)) &
+                                 ", best_metric=" & u32_img(best_metric_r) &
+                                 ", best_code=" & integer'image(to_integer(best_code_r)) &
+                                 ", best_dopp=" & integer'image(to_integer(best_dopp_r)) &
+                                 ", detect_thresh=" & u32_img(detect_thresh));
+              end if;
+            end if;
+            -- pragma translate_on
             state_r <= IDLE;
         end case;
       end if;

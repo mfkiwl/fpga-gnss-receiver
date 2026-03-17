@@ -2,6 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.gps_l1_ca_pkg.all;
+use work.gps_l1_ca_log_pkg.all;
 use work.gps_l1_ca_nco_pkg.all;
 
 entity gps_l1_ca_acq_fft is
@@ -59,6 +60,8 @@ architecture rtl of gps_l1_ca_acq_fft is
   constant C_MAX_BINS         : integer := C_MAX_CODE_BINS * C_MAX_DOPP_BINS;
   constant C_NFFT             : integer := 2048;
   constant C_FFT_BITS         : integer := 11;
+  -- Simulation debug knob: print FFT acquisition search attempts.
+  constant C_LOG_FFT_ACQ_ATTEMPTS : boolean := true;
 
   type sample_arr_t is array (0 to C_SAMPLES_PER_MS - 1) of signed(15 downto 0);
   type metric_arr_t is array (0 to C_MAX_BINS - 1) of unsigned(31 downto 0);
@@ -172,6 +175,14 @@ architecture rtl of gps_l1_ca_acq_fft is
     else
       return to_signed(x, 16);
     end if;
+  end function;
+
+  function u32_img(x : unsigned(31 downto 0)) return string is
+  begin
+    if x(31) = '1' then
+      return "0x" & to_hstring(std_logic_vector(x));
+    end if;
+    return integer'image(to_integer(x));
   end function;
 
   function carr_fcw_from_hz(dopp_hz : signed(15 downto 0)) return signed is
@@ -731,6 +742,24 @@ begin
                 end loop;
               end loop;
 
+              -- pragma translate_off
+              if C_LOG_FFT_ACQ_ATTEMPTS then
+                log_msg("ACQ_FFT", "start: PRN range=" &
+                                  integer'image(to_integer(prn_start)) & ".." &
+                                  integer'image(to_integer(prn_stop)) &
+                                  ", coh_ms=" & integer'image(coh_cfg_i) &
+                                  ", noncoh=" & integer'image(noncoh_cfg_i) &
+                                  ", code_bins=" & integer'image(active_code_i) &
+                                  ", code_step=" & integer'image(code_step_cfg_i) &
+                                  ", doppler_bins_cfg=" & integer'image(dopp_bins_cfg_i) &
+                                  ", doppler_bins_active=" & integer'image(active_dopp_i) &
+                                  ", doppler_hz_active=[" &
+                                  integer'image(dopp_min_i + (start_dopp_idx_i * step_i)) & "," &
+                                  integer'image(dopp_min_i + ((start_dopp_idx_i + active_dopp_i - 1) * step_i)) &
+                                  "], detect_thresh=" & u32_img(detect_thresh));
+              end if;
+              -- pragma translate_on
+
               prn_seq_r <= build_prn_sequence(to_integer(prn_start));
 
               active_code_bins_r  <= active_code_i;
@@ -760,6 +789,15 @@ begin
             end if;
 
           when PRN_PREP =>
+            -- pragma translate_off
+            if C_LOG_FFT_ACQ_ATTEMPTS and prep_code_idx_r = 0 then
+              log_msg("ACQ_FFT", "prn-start: prn=" & integer'image(to_integer(prn_cur_r)) &
+                                 ", code_bins=" & integer'image(active_code_bins_r) &
+                                 ", code_start=" & integer'image(to_integer(bin_code_r(0))) &
+                                 ", code_end=" & integer'image(to_integer(bin_code_r(active_code_bins_r - 1))));
+            end if;
+            -- pragma translate_on
+
             code_fft_r(prep_code_idx_r) <= fft_radix2(
               build_code_fft_input(prn_seq_r, to_integer(bin_code_r(prep_code_idx_r))),
               false
@@ -789,6 +827,18 @@ begin
 
           when DOPP_PREP =>
             dopp_bin_base_i := dopp_idx_r * active_code_bins_r;
+            -- pragma translate_off
+            if C_LOG_FFT_ACQ_ATTEMPTS then
+              log_msg("ACQ_FFT", "attempt: prn=" & integer'image(to_integer(prn_cur_r)) &
+                                 ", noncoh=" & integer'image(noncoh_idx_r + 1) & "/" & integer'image(active_noncoh_r) &
+                                 ", coh=" & integer'image(coh_ms_idx_r + 1) & "/" & integer'image(active_coh_ms_r) &
+                                 ", doppler_idx=" & integer'image(dopp_idx_r) & "/" &
+                                 integer'image(active_dopp_bins_r - 1) &
+                                 ", doppler_hz=" & integer'image(to_integer(bin_dopp_r(dopp_bin_base_i))) &
+                                 ", code_start=" & integer'image(to_integer(bin_code_r(dopp_bin_base_i))) &
+                                 ", code_end=" & integer'image(to_integer(bin_code_r(dopp_bin_base_i + active_code_bins_r - 1))));
+            end if;
+            -- pragma translate_on
             signal_fft_r <= fft_radix2(
               build_mixed_fft_input(cap_i_r, cap_q_r, bin_dopp_r(dopp_bin_base_i)),
               false
@@ -860,6 +910,14 @@ begin
             end if;
 
             if prn_eval_idx_r + 1 >= active_total_bins_r then
+              -- pragma translate_off
+              if C_LOG_FFT_ACQ_ATTEMPTS then
+                log_msg("ACQ_FFT", "prn-result: prn=" & integer'image(to_integer(prn_cur_r)) &
+                                   ", best_metric=" & u32_img(prn_metric_next_v) &
+                                   ", best_code=" & integer'image(to_integer(prn_code_next_v)) &
+                                   ", best_dopp=" & integer'image(to_integer(prn_dopp_next_v)));
+              end if;
+              -- pragma translate_on
               if prn_metric_next_v >= best_metric_r then
                 best_metric_r <= prn_metric_next_v;
                 best_prn_r    <= prn_cur_r;
@@ -907,6 +965,16 @@ begin
             else
               acq_success_r  <= '0';
             end if;
+            -- pragma translate_off
+            if C_LOG_FFT_ACQ_ATTEMPTS then
+              log_msg("ACQ_FFT", "final: success=" & boolean'image(best_metric_r >= detect_thresh) &
+                                 ", best_prn=" & integer'image(to_integer(best_prn_r)) &
+                                 ", best_metric=" & u32_img(best_metric_r) &
+                                 ", best_code=" & integer'image(to_integer(best_code_r)) &
+                                 ", best_dopp=" & integer'image(to_integer(best_dopp_r)) &
+                                 ", detect_thresh=" & u32_img(detect_thresh));
+            end if;
+            -- pragma translate_on
             state_r <= IDLE;
         end case;
       end if;
