@@ -6,7 +6,7 @@ GNSS_DATA_DIR := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN
 GNSS_DATA_FILE := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat
 GNSS_DATA_SRC := $(GNSS_DATA_DIR)/$(GNSS_DATA_FILE)
 
-.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-chan-bank sim-acq-file sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
+.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-chan-bank sim-acq-file sim-acq-equiv sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
 
 help:
 	@echo "Targets:"
@@ -17,6 +17,7 @@ help:
 	@echo "  make sim-unit     - Run unit-level VHDL testbenches"
 	@echo "  make sim-chan-bank - Run gps_l1_ca_chan_bank_tb"
 	@echo "  make sim-acq-file - Run gps_l1_ca_acq_tb with GNSS stimulus file replay"
+	@echo "  make sim-acq-equiv - Run gps_l1_ca_acq_tb in TD and FFT modes and compare tuples"
 	@echo "  make sim-regress  - Run regression suite"
 	@echo "  make phase3-eval  - Run smoke + Phase 3 metric report (non-gating)"
 	@echo "                     Set PHASE3_ENABLE_WAVE=0 to disable wave dump"
@@ -70,6 +71,9 @@ sim-chan-bank:
 
 sim-acq-file:
 	@./sim/run_acq_file_tb.sh
+
+sim-acq-equiv:
+	@./sim/run_acq_td_fft_equiv.sh
 
 sim-regress:
 	@./sim/run_regression.sh

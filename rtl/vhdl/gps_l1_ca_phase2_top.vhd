@@ -9,7 +9,8 @@ entity gps_l1_ca_phase2_top is
     DATAW          : integer := 32;
     G_NUM_CHANNELS : integer := 5;
     CLK_HZ         : integer := 50000000;
-    UART_BAUD      : integer := 115200
+    UART_BAUD      : integer := 115200;
+    G_ACQ_IMPL_FFT : boolean := true
   );
   port (
     clk         : in  std_logic;
@@ -270,6 +271,9 @@ begin
     );
 
   acq_u : entity work.gps_l1_ca_acq
+    generic map (
+      G_ACQ_IMPL_FFT => G_ACQ_IMPL_FFT
+    )
     port map (
       clk           => clk,
       rst_n         => rst_n and not soft_reset_req,

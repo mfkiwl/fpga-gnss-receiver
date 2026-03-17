@@ -11,7 +11,8 @@ entity gps_l1_ca_phase1_tb is
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
     G_MAX_FILE_SAMPLES    : integer := 400000000;
     G_REQUIRE_LOCK        : boolean := false;
-    G_FAST_MODE           : boolean := false
+    G_FAST_MODE           : boolean := false;
+    G_DUT_ACQ_IMPL_FFT    : boolean := true
   );
 end entity;
 
@@ -39,6 +40,9 @@ begin
   clk <= not clk after C_CLK_PER / 2;
 
   dut : entity work.gps_l1_ca_phase1_top
+    generic map (
+      G_ACQ_IMPL_FFT => G_DUT_ACQ_IMPL_FFT
+    )
     port map (
       clk          => clk,
       rst_n        => rst_n,

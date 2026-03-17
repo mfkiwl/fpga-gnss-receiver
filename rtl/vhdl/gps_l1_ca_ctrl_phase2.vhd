@@ -95,7 +95,7 @@ architecture rtl of gps_l1_ca_ctrl_phase2 is
   signal doppler_min_r     : signed(15 downto 0) := to_signed(-5000, 16);
   signal doppler_max_r     : signed(15 downto 0) := to_signed(5000, 16);
   signal doppler_step_r    : signed(15 downto 0) := to_signed(500, 16);
-  signal detect_thresh_r   : unsigned(31 downto 0) := to_unsigned(10000, 32);
+  signal detect_thresh_r   : unsigned(31 downto 0) := to_unsigned(5000, 32);
   signal min_cn0_dbhz_r    : unsigned(7 downto 0) := to_unsigned(22, 8);
   signal carrier_lock_th_r : signed(15 downto 0) := to_signed(16384, 16); -- 0.50 in Q15
   signal max_lock_fail_r   : unsigned(7 downto 0) := to_unsigned(50, 8);

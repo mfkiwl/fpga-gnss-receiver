@@ -67,7 +67,7 @@ architecture rtl of gps_l1_ca_ctrl is
   signal doppler_min_r     : signed(15 downto 0) := to_signed(-5000, 16);
   signal doppler_max_r     : signed(15 downto 0) := to_signed(5000, 16);
   signal doppler_step_r    : signed(15 downto 0) := to_signed(500, 16);
-  signal detect_thresh_r   : unsigned(31 downto 0) := to_unsigned(10000, 32);
+  signal detect_thresh_r   : unsigned(31 downto 0) := to_unsigned(5000, 32);
   signal pll_gain_r        : unsigned(15 downto 0) := to_unsigned(64, 16);
   signal dll_gain_r        : unsigned(15 downto 0) := to_unsigned(64, 16);
   signal lock_thresh_r     : unsigned(15 downto 0) := to_unsigned(100, 16);

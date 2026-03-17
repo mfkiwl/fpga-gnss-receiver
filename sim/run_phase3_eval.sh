@@ -5,12 +5,20 @@ PHASE3_LOG_FILE="${PHASE3_LOG_FILE:-sim/phase3_eval.log}"
 PHASE3_EXPECTED_FILE="${PHASE3_EXPECTED_FILE:-tb/txt/expected_output.txt}"
 PHASE3_STRICT="${PHASE3_STRICT:-0}"
 PHASE3_ENABLE_WAVE="${PHASE3_ENABLE_WAVE:-}"
+PHASE3_ACQ_IMPL_FFT="${PHASE3_ACQ_IMPL_FFT:-}"
 
 mkdir -p "$(dirname "${PHASE3_LOG_FILE}")"
 
 echo "==> Running Phase 3 evaluation smoke"
+smoke_env=()
 if [[ -n "${PHASE3_ENABLE_WAVE}" ]]; then
-  NVC_ENABLE_WAVE="${PHASE3_ENABLE_WAVE}" ./sim/run_smoke.sh 2>&1 | tee "${PHASE3_LOG_FILE}"
+  smoke_env+=("NVC_ENABLE_WAVE=${PHASE3_ENABLE_WAVE}")
+fi
+if [[ -n "${PHASE3_ACQ_IMPL_FFT}" ]]; then
+  smoke_env+=("ACQ_IMPL_FFT=${PHASE3_ACQ_IMPL_FFT}")
+fi
+if [[ ${#smoke_env[@]} -gt 0 ]]; then
+  env "${smoke_env[@]}" ./sim/run_smoke.sh 2>&1 | tee "${PHASE3_LOG_FILE}"
 else
   ./sim/run_smoke.sh 2>&1 | tee "${PHASE3_LOG_FILE}"
 fi

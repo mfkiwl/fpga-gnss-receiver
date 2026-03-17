@@ -12,7 +12,8 @@ entity gps_l1_ca_phase2_tb is
     G_MAX_FILE_SAMPLES    : integer := 400000000;
     G_REQUIRE_PVT         : boolean := false;
     G_FAST_MODE           : boolean := false;
-    G_ENABLE_WAVE_DUMP    : boolean := true
+    G_ENABLE_WAVE_DUMP    : boolean := true;
+    G_DUT_ACQ_IMPL_FFT    : boolean := true
   );
 end entity;
 
@@ -41,7 +42,8 @@ begin
 
   dut : entity work.gps_l1_ca_phase2_top
     generic map (
-      G_NUM_CHANNELS      => 8
+      G_NUM_CHANNELS      => 8,
+      G_ACQ_IMPL_FFT      => G_DUT_ACQ_IMPL_FFT
     )
     port map (
       clk          => clk,

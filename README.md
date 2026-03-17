@@ -38,6 +38,8 @@ docs/
 ```bash
 make lint-vhdl
 make sim-smoke
+make sim-acq-file
+make sim-acq-equiv
 make sim-regress
 make phase3-eval
 make phase3-gate

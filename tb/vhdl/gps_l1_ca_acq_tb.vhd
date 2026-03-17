@@ -11,7 +11,7 @@ entity gps_l1_ca_acq_tb is
     G_FILE_SAMPLE_RATE_SPS: integer := 4000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
     G_MAX_FILE_SAMPLES    : integer := 3000000;
-    G_DUT_ACQ_IMPL_FFT    : boolean := false
+    G_DUT_ACQ_IMPL_FFT    : boolean := true
   );
 end entity;
 
@@ -113,10 +113,22 @@ begin
       s_valid <= '0';
     end procedure;
 
+    procedure log_acq_tuple(case_tag : in string) is
+    begin
+      log_msg("ACQ_TUPLE tag=" & case_tag &
+              " success=" & std_logic'image(acq_success) &
+              " valid=" & std_logic'image(result_valid) &
+              " prn=" & integer'image(to_integer(result_prn)) &
+              " code=" & integer'image(to_integer(result_code)) &
+              " dopp=" & integer'image(to_integer(result_dopp)) &
+              " metric=" & integer'image(to_integer(result_metric)));
+    end procedure;
+
     procedure run_prn_case(
       prn_v            : in integer;
       thresh_v         : in unsigned(31 downto 0);
-      case_name        : in string
+      case_name        : in string;
+      case_tag         : in string
     ) is
       variable seen_done_v   : boolean := false;
       variable read_status_v : file_open_status;
@@ -201,15 +213,17 @@ begin
       assert to_integer(result_prn) = prn_v
         report case_name & ": expected detected PRN to match configured PRN."
         severity failure;
+      log_acq_tuple(case_tag);
     end procedure;
 
     procedure run_fullspace_prn_case(
       prn_v     : in integer;
       thresh_v  : in unsigned(31 downto 0);
-      case_name : in string
+      case_name : in string;
+      case_tag  : in string
     ) is
     begin
-      run_prn_case(prn_v, thresh_v, case_name);
+      run_prn_case(prn_v, thresh_v, case_name, case_tag);
       log_msg(case_name & " result_code=" &
               integer'image(to_integer(result_code)) &
               ", result_dopp=" & integer'image(to_integer(result_dopp)));
@@ -234,6 +248,10 @@ begin
     variable step_hz_v                 : integer := 1;
     variable full_dopp_bins_v          : integer := 1;
     variable full_space_samples_req_v  : integer := 0;
+    variable no_sig_prn_v              : unsigned(5 downto 0) := (others => '0');
+    variable no_sig_code_v             : unsigned(10 downto 0) := (others => '0');
+    variable no_sig_dopp_v             : signed(15 downto 0) := (others => '0');
+    variable no_sig_metric_v           : unsigned(31 downto 0) := (others => '0');
   begin
     rst_n <= '0';
     for i in 0 to 3 loop
@@ -323,6 +341,7 @@ begin
     assert acq_success = '1' report "Expected acquisition success with zero threshold." severity failure;
     assert result_valid = '1' report "Expected result_valid on successful acquisition." severity failure;
     assert to_integer(result_prn) = 1 report "Expected detected PRN to match configured PRN." severity failure;
+    log_acq_tuple("run1_zero_thresh");
     run1_metric_v := result_metric;
     realistic_thresh_v := shift_right(run1_metric_v, 1);
     if realistic_thresh_v = to_unsigned(0, realistic_thresh_v'length) then
@@ -397,6 +416,7 @@ begin
       report "Expected non-zero metric for exercised acquisition path." severity failure;
     assert result_dopp >= doppler_min and result_dopp <= doppler_max
       report "Estimated Doppler should stay within configured range." severity failure;
+    log_acq_tuple("run2_max_thresh");
 
     -- Third run: realistic non-zero threshold should pass.
     detect_thresh <= realistic_thresh_v;
@@ -470,6 +490,7 @@ begin
       report "Expected acquisition metric to clear realistic threshold." severity failure;
     assert result_dopp >= doppler_min and result_dopp <= doppler_max
       report "Estimated Doppler should stay within configured range in third run." severity failure;
+    log_acq_tuple("run3_realistic_thresh");
 
     -- Fourth and later runs: full code-Doppler search space for PRNs found in stimulus file.
     if G_USE_FILE_INPUT then
@@ -495,7 +516,7 @@ begin
       code_bins_i <= to_unsigned(64, code_bins_i'length);
       code_step_i <= to_unsigned(16, code_step_i'length);
       doppler_bins_i <= to_unsigned(full_dopp_bins_v, doppler_bins_i'length);
-      run_fullspace_prn_case(1, realistic_thresh_v, "Run4 PRN 1 full code-doppler");
+      run_fullspace_prn_case(1, realistic_thresh_v, "Run4 PRN 1 full code-doppler", "run4_prn1_fullspace");
 
       -- Derive a robust non-zero threshold from full-space PRN 1 before testing remaining PRNs.
       fullspace_thresh_v := shift_right(result_metric, 4);
@@ -503,12 +524,70 @@ begin
         fullspace_thresh_v := to_unsigned(1, fullspace_thresh_v'length);
       end if;
 
-      run_fullspace_prn_case(20, fullspace_thresh_v, "Run5 PRN 20 full code-doppler");
-      run_fullspace_prn_case(32, fullspace_thresh_v, "Run6 PRN 32 full code-doppler");
-      run_fullspace_prn_case(17, fullspace_thresh_v, "Run7 PRN 17 full code-doppler");
-      run_fullspace_prn_case(11, fullspace_thresh_v, "Run8 PRN 11 full code-doppler");
+      run_fullspace_prn_case(20, fullspace_thresh_v, "Run5 PRN 20 full code-doppler", "run5_prn20_fullspace");
+      run_fullspace_prn_case(32, fullspace_thresh_v, "Run6 PRN 32 full code-doppler", "run6_prn32_fullspace");
+      run_fullspace_prn_case(17, fullspace_thresh_v, "Run7 PRN 17 full code-doppler", "run7_prn17_fullspace");
+      run_fullspace_prn_case(11, fullspace_thresh_v, "Run8 PRN 11 full code-doppler", "run8_prn11_fullspace");
     else
       log_msg("Skipping full code-doppler PRN 1 run when not using file input.");
+
+      -- Corner run: doppler range inversion must still produce a bounded estimate.
+      prn_start <= to_unsigned(1, prn_start'length);
+      prn_stop <= to_unsigned(1, prn_stop'length);
+      doppler_min <= to_signed(2000, doppler_min'length);
+      doppler_max <= to_signed(-2000, doppler_max'length);
+      doppler_step <= to_signed(500, doppler_step'length);
+      code_bins_i <= to_unsigned(1, code_bins_i'length);
+      code_step_i <= to_unsigned(1, code_step_i'length);
+      doppler_bins_i <= to_unsigned(1, doppler_bins_i'length);
+      s_i <= to_signed(300, 16);
+      s_q <= to_signed(50, 16);
+      run_prn_case(1, to_unsigned(0, detect_thresh'length),
+                   "Run4 doppler inversion corner", "run4_dopp_inversion");
+      assert result_dopp >= to_signed(-2000, result_dopp'length) and
+             result_dopp <= to_signed(2000, result_dopp'length)
+        report "Run4 doppler inversion: estimated Doppler should remain bounded."
+        severity failure;
+
+      -- Corner run: no-signal tie behavior should be reproducible across repeated starts.
+      doppler_min <= to_signed(-1000, doppler_min'length);
+      doppler_max <= to_signed(1000, doppler_max'length);
+      doppler_step <= to_signed(500, doppler_step'length);
+      code_bins_i <= to_unsigned(1, code_bins_i'length);
+      code_step_i <= to_unsigned(1, code_step_i'length);
+      doppler_bins_i <= to_unsigned(1, doppler_bins_i'length);
+      s_i <= to_signed(0, 16);
+      s_q <= to_signed(0, 16);
+      run_prn_case(1, to_unsigned(0, detect_thresh'length),
+                   "Run5 no-signal reproducibility A", "run5_no_signal_a");
+      no_sig_prn_v := result_prn;
+      no_sig_code_v := result_code;
+      no_sig_dopp_v := result_dopp;
+      no_sig_metric_v := result_metric;
+      run_prn_case(1, to_unsigned(0, detect_thresh'length),
+                   "Run6 no-signal reproducibility B", "run6_no_signal_b");
+      assert result_prn = no_sig_prn_v and
+             result_code = no_sig_code_v and
+             result_dopp = no_sig_dopp_v and
+             result_metric = no_sig_metric_v
+        report "Run6 no-signal reproducibility: tuple changed across repeated runs."
+        severity failure;
+
+      -- Corner run: oversized bin config should complete (FFT mode exercises clipping path quickly).
+      if G_DUT_ACQ_IMPL_FFT then
+        doppler_min <= to_signed(0, doppler_min'length);
+        doppler_max <= to_signed(0, doppler_max'length);
+        doppler_step <= to_signed(250, doppler_step'length);
+        doppler_bins_i <= to_unsigned(255, doppler_bins_i'length);
+        code_bins_i <= to_unsigned(255, code_bins_i'length);
+        code_step_i <= to_unsigned(2047, code_step_i'length);
+        s_i <= to_signed(300, 16);
+        s_q <= to_signed(50, 16);
+        run_prn_case(1, to_unsigned(0, detect_thresh'length),
+                     "Run7 bin clipping corner", "run7_bin_clipping");
+      else
+        log_msg("Skipping Run7 bin clipping corner in TD mode due runtime cost.");
+      end if;
     end if;
 
     log_msg("gps_l1_ca_acq_tb completed");

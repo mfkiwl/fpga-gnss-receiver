@@ -8,6 +8,7 @@ NVC_WAVE_FILE="${NVC_WAVE_FILE:-sim/gps_l1_ca_phase2_tb.fst}"
 TB_GENERIC_ARGS="${TB_GENERIC_ARGS:-}"
 FAST_MODE="${FAST_MODE:-0}"
 NVC_ENABLE_WAVE="${NVC_ENABLE_WAVE:-1}"
+ACQ_IMPL_FFT="${ACQ_IMPL_FFT:-}"
 
 ./lint/lint_vhdl.sh
 
@@ -26,6 +27,11 @@ if command -v nvc >/dev/null 2>&1; then
     if [[ "${TB_GENERIC_ARGS}" != *"G_FAST_MODE"* ]]; then
       tb_generic_argv+=("-gG_FAST_MODE=true")
     fi
+  fi
+
+  if [[ -n "${ACQ_IMPL_FFT}" && "${TB_GENERIC_ARGS}" != *"G_DUT_ACQ_IMPL_FFT"* ]]; then
+    tb_generic_argv+=("-gG_DUT_ACQ_IMPL_FFT=${ACQ_IMPL_FFT}")
+    echo "    Acquisition implementation override: G_DUT_ACQ_IMPL_FFT=${ACQ_IMPL_FFT}"
   fi
 
   wave_dump_enabled=1

@@ -8,6 +8,7 @@ ACQ_FILE_SAMPLE_RATE_SPS="${ACQ_FILE_SAMPLE_RATE_SPS:-4000000}"
 ACQ_DUT_SAMPLE_RATE_SPS="${ACQ_DUT_SAMPLE_RATE_SPS:-2000000}"
 ACQ_MAX_FILE_SAMPLES="${ACQ_MAX_FILE_SAMPLES:-3000000}"
 ACQ_WAVE_FILE="${ACQ_WAVE_FILE:-sim/gps_l1_ca_acq_tb.fst}"
+ACQ_IMPL_FFT="${ACQ_IMPL_FFT:-true}"
 
 ./lint/lint_vhdl.sh
 
@@ -17,6 +18,7 @@ tb_generic_argv=(
   "-gG_FILE_SAMPLE_RATE_SPS=${ACQ_FILE_SAMPLE_RATE_SPS}"
   "-gG_DUT_SAMPLE_RATE_SPS=${ACQ_DUT_SAMPLE_RATE_SPS}"
   "-gG_MAX_FILE_SAMPLES=${ACQ_MAX_FILE_SAMPLES}"
+  "-gG_DUT_ACQ_IMPL_FFT=${ACQ_IMPL_FFT}"
 )
 
 echo "==> Running gps_l1_ca_acq_tb with GNSS stimulus file"
@@ -24,6 +26,7 @@ echo "    input: ${ACQ_INPUT_FILE}"
 echo "    file Fs: ${ACQ_FILE_SAMPLE_RATE_SPS}"
 echo "    DUT  Fs: ${ACQ_DUT_SAMPLE_RATE_SPS}"
 echo "    max injected samples: ${ACQ_MAX_FILE_SAMPLES}"
+echo "    acq impl fft: ${ACQ_IMPL_FFT}"
 echo "    stop-time: ${ACQ_TB_STOP_TIME}"
 echo "    wave: ${ACQ_WAVE_FILE}"
 
