@@ -24,6 +24,11 @@ entity gps_l1_ca_track_chan is
     max_lock_fail_i : in unsigned(7 downto 0);
     dopp_step_pullin_i : in unsigned(15 downto 0);
     dopp_step_lock_i : in unsigned(15 downto 0);
+    pll_bw_hz_i     : in unsigned(15 downto 0);
+    dll_bw_hz_i     : in unsigned(15 downto 0);
+    pll_bw_narrow_hz_i : in unsigned(15 downto 0);
+    dll_bw_narrow_hz_i : in unsigned(15 downto 0);
+    fll_bw_hz_i     : in unsigned(15 downto 0);
     track_state_o  : out track_state_t;
     code_lock_o    : out std_logic;
     carrier_lock_o : out std_logic;
@@ -42,20 +47,27 @@ architecture rtl of gps_l1_ca_track_chan is
 
   constant C_PROMPT_MAG_MIN     : integer := 2500;
   constant C_CARR_LOCK_HYST_Q15 : integer := 2048; -- ~0.0625 hysteresis on lock metric.
-  constant C_DLL_ERR_LOCK_MAX   : integer := 60000000;
-  constant C_CARR_ERR_LOCK_MAX  : integer := 60000000;
-  constant C_DLL_ERR_TRACK_MAX  : integer := 100000000;
-  constant C_CARR_ERR_TRACK_MAX : integer := 100000000;
-  constant C_CARR_ERR_NORM_GAIN : integer := 256;
-  constant C_CARR_ERR_DBAND_PULLIN : integer := 24;
+  constant C_DLL_ERR_LOCK_MAX   : integer := 40000;
+  constant C_CARR_ERR_LOCK_MAX  : integer := 40000;
+  constant C_DLL_ERR_TRACK_MAX  : integer := 40000;
+  constant C_CARR_ERR_TRACK_MAX : integer := 40000;
+  constant C_CARR_ERR_NORM_GAIN : integer := 256; -- Q15 normalizer helper.
   constant C_LOCK_SCORE_MAX     : integer := 255;
   constant C_LOCK_SCORE_INC_BOTH: integer := 4;
   constant C_LOCK_SCORE_INC_CODE: integer := 2;
   constant C_LOCK_SCORE_DEC_CODE: integer := 6;
   constant C_LOCK_SCORE_DEC_CARR: integer := 2;
-  constant C_PLL_ERR_GAIN_MIN   : integer := 4;
   constant C_CN0_AVG_DIV        : integer := 16;
   constant C_LOCK_SMOOTH_DIV    : integer := 8;
+  constant C_CODE_LOOP_KP_PER_HZ_Q8 : integer := 32768;
+  constant C_CODE_LOOP_KI_DIV    : integer := 128;
+  constant C_PLL_LOOP_KI_DIV     : integer := 256;
+  constant C_FLL_LOOP_STEP_SCALE : integer := 4;
+  constant C_PHASE_ERR_MAX_Q15   : integer := 24576;
+  constant C_CARR_FCW_DELTA_MAX  : integer := 64000000;
+  constant C_PLL_GAIN_MIN_Q8_8   : integer := 64;  -- 0.25 Hz
+  constant C_DLL_GAIN_MIN_Q8_8   : integer := 16;  -- 0.0625 Hz
+  constant C_FLL_GAIN_MIN_Q8_8   : integer := 64;  -- 0.25 Hz
   constant C_CODE_FCW_STEP      : unsigned(31 downto 0) := x"00010000";
   constant C_CODE_FCW_DELTA_MAX : unsigned(31 downto 0) := x"00200000";
   constant C_CARR_FCW_PER_HZ    : integer := 2147;
@@ -71,7 +83,10 @@ architecture rtl of gps_l1_ca_track_chan is
 
   signal code_nco_phase_r   : unsigned(31 downto 0) := (others => '0');
   signal code_fcw_r         : unsigned(31 downto 0) := C_CODE_NCO_FCW;
+  signal code_loop_i_r      : signed(31 downto 0) := (others => '0');
   signal carr_nco_phase_r   : signed(31 downto 0) := (others => '0');
+  signal carr_fcw_cmd_r     : signed(31 downto 0) := (others => '0');
+  signal carr_loop_i_r      : signed(31 downto 0) := (others => '0');
 
   signal prompt_i_acc_r     : signed(31 downto 0) := (others => '0');
   signal prompt_q_acc_r     : signed(31 downto 0) := (others => '0');
@@ -168,6 +183,29 @@ architecture rtl of gps_l1_ca_track_chan is
   function carr_fcw_from_hz(dopp_hz : signed(15 downto 0)) return signed is
   begin
     return to_signed(to_integer(dopp_hz) * C_CARR_FCW_PER_HZ, 32);
+  end function;
+
+  function clamp_i(x : integer; lo : integer; hi : integer) return integer is
+  begin
+    if x < lo then
+      return lo;
+    elsif x > hi then
+      return hi;
+    else
+      return x;
+    end if;
+  end function;
+
+  function carr_fcw_from_hz_i(dopp_hz : integer) return integer is
+  begin
+    return dopp_hz * C_CARR_FCW_PER_HZ;
+  end function;
+
+  function dopp_hz_from_carr_fcw(fcw_v : signed(31 downto 0)) return signed is
+    variable hz_i : integer;
+  begin
+    hz_i := to_integer(fcw_v) / C_CARR_FCW_PER_HZ;
+    return clamp_s16(hz_i);
   end function;
 
   function ten_log10_db100(x : integer) return integer is
@@ -319,15 +357,32 @@ begin
     variable cross_i            : integer;
     variable dot_i              : integer;
     variable carrier_err_norm_den_i : integer;
-    variable carrier_err_dband_i: integer;
+    variable carrier_err_pll_q15_i : integer;
+    variable carrier_err_fll_q15_i : integer;
+    variable dll_err_q15_i      : integer;
     variable code_enter_v       : boolean;
     variable code_track_v       : boolean;
     variable carrier_enter_v    : boolean;
     variable carrier_track_v    : boolean;
     variable fcw_floor          : unsigned(31 downto 0);
     variable fcw_ceil           : unsigned(31 downto 0);
-    variable doppler_step_hz_i  : integer;
     variable dopp_i             : integer;
+    variable carr_fcw_i         : integer;
+    variable carr_fcw_max_step_i: integer;
+    variable code_fcw_i         : integer;
+    variable code_delta_i       : integer;
+    variable code_prop_i        : integer;
+    variable code_kp_i          : integer;
+    variable code_ki_i          : integer;
+    variable carr_prop_i        : integer;
+    variable carr_kp_i          : integer;
+    variable carr_ki_i          : integer;
+    variable fll_step_i         : integer;
+    variable fll_gain_i         : integer;
+    variable pll_bw_sel_i       : integer;
+    variable dll_bw_sel_i       : integer;
+    variable den_i              : integer;
+    variable ratio_q8_i         : integer;
     variable prompt_i_s         : integer;
     variable prompt_q_s         : integer;
     variable early_i_s          : integer;
@@ -354,7 +409,6 @@ begin
     variable lock_enter_th_i    : integer;
     variable lock_exit_th_i     : integer;
     variable lock_score_i       : integer;
-    variable carrier_gain_i     : integer;
     variable cn0_inst_i         : integer;
     variable cn0_i              : integer;
   begin
@@ -366,7 +420,10 @@ begin
         code_phase_r        <= (others => '0');
         code_nco_phase_r    <= (others => '0');
         code_fcw_r          <= C_CODE_NCO_FCW;
+        code_loop_i_r       <= (others => '0');
         carr_nco_phase_r    <= (others => '0');
+        carr_fcw_cmd_r      <= (others => '0');
+        carr_loop_i_r       <= (others => '0');
         prompt_i_acc_r      <= (others => '0');
         prompt_q_acc_r      <= (others => '0');
         early_i_acc_r       <= (others => '0');
@@ -420,6 +477,10 @@ begin
           late_i_acc_r        <= (others => '0');
           late_q_acc_r        <= (others => '0');
           carr_nco_phase_r    <= (others => '0');
+          carr_fcw_cmd_r      <= (others => '0');
+          carr_loop_i_r       <= (others => '0');
+          code_fcw_r          <= C_CODE_NCO_FCW;
+          code_loop_i_r       <= (others => '0');
         else
           if acq_valid = '1' then
             -- Allow channel retune/reassignment at runtime when scheduler picks a stronger PRN.
@@ -447,6 +508,9 @@ begin
             late_i_acc_r        <= (others => '0');
             late_q_acc_r        <= (others => '0');
             code_fcw_r          <= C_CODE_NCO_FCW;
+            code_loop_i_r       <= (others => '0');
+            carr_fcw_cmd_r      <= carr_fcw_from_hz(acq_dopp);
+            carr_loop_i_r       <= carr_fcw_from_hz(acq_dopp);
             prn_init_r          <= '1';
             lead_seed_pending_r <= '1';
             lag_chip_r          <= '0';
@@ -471,11 +535,14 @@ begin
                 nbp_avg_r           <= 1;
                 carrier_lock_metric_r <= (others => '0');
                 code_fcw_r          <= C_CODE_NCO_FCW;
+                code_loop_i_r       <= (others => '0');
                 prn_r               <= init_prn;
                 dopp_r              <= init_dopp;
                 code_phase_r        <= (others => '0');
                 code_nco_phase_r    <= (others => '0');
                 carr_nco_phase_r    <= (others => '0');
+                carr_fcw_cmd_r      <= carr_fcw_from_hz(init_dopp);
+                carr_loop_i_r       <= carr_fcw_from_hz(init_dopp);
 
               when TRACK_PULLIN | TRACK_LOCKED =>
               if lead_seed_pending_r = '1' then
@@ -484,7 +551,7 @@ begin
               end if;
 
               if s_valid = '1' then
-                carr_fcw_v := carr_fcw_from_hz(dopp_r);
+                carr_fcw_v := carr_fcw_cmd_r;
                 next_carr_phase := carr_nco_phase_r + carr_fcw_v;
                 carr_nco_phase_r <= next_carr_phase;
 
@@ -617,13 +684,16 @@ begin
                   carrier_lock_metric_r <= to_signed(carrier_metric_i, carrier_lock_metric_r'length);
 
                   if state_r = TRACK_LOCKED then
-                    -- PLL mode: use prompt phase discriminator once carrier is near lock.
+                    -- PLL mode: prompt Q/I phase discriminator.
                     curr_i_s := to_integer(shift_right(next_prompt_i, 12));
                     curr_q_s := to_integer(shift_right(next_prompt_q, 12));
-                    carrier_err_norm_den_i := (abs_i(curr_i_s) / C_CARR_ERR_NORM_GAIN) + 1;
-                    carrier_err_i := curr_q_s / carrier_err_norm_den_i;
+                    den_i := abs_i(curr_i_s) + 1;
+                    ratio_q8_i := (curr_q_s * 256) / den_i;
+                    carrier_err_pll_q15_i := clamp_i(ratio_q8_i * 128, -C_PHASE_ERR_MAX_Q15, C_PHASE_ERR_MAX_Q15);
+                    carrier_err_fll_q15_i := carrier_err_pll_q15_i;
+                    carrier_err_i := carrier_err_pll_q15_i;
                   else
-                    -- FLL pull-in mode: discriminate from prompt phase progression.
+                    -- FLL pull-in mode: prompt phase progression cross/dot discriminator.
                     if prev_prompt_valid_r = '1' then
                       prev_i_s := to_integer(shift_right(prev_prompt_i_r, 12));
                       prev_q_s := to_integer(shift_right(prev_prompt_q_r, 12));
@@ -631,60 +701,111 @@ begin
                       curr_q_s := to_integer(shift_right(next_prompt_q, 12));
                       cross_i := prev_i_s * curr_q_s - prev_q_s * curr_i_s;
                       dot_i   := prev_i_s * curr_i_s + prev_q_s * curr_q_s;
-                      carrier_err_norm_den_i := (abs_i(dot_i) / C_CARR_ERR_NORM_GAIN) + 1;
-                      carrier_err_i := cross_i / carrier_err_norm_den_i;
+                      den_i := abs_i(dot_i) + 1;
+                      ratio_q8_i := (cross_i * 256) / den_i;
+                      carrier_err_fll_q15_i := clamp_i(ratio_q8_i * 128, -C_PHASE_ERR_MAX_Q15, C_PHASE_ERR_MAX_Q15);
                     else
                       curr_i_s := to_integer(shift_right(next_prompt_i, 12));
                       curr_q_s := to_integer(shift_right(next_prompt_q, 12));
-                      carrier_err_norm_den_i := (abs_i(curr_i_s) / 8) + 1;
-                      carrier_err_i := curr_q_s / carrier_err_norm_den_i;
+                      den_i := abs_i(curr_i_s) + 1;
+                      ratio_q8_i := (curr_q_s * 256) / den_i;
+                      carrier_err_fll_q15_i := clamp_i(ratio_q8_i * 128, -C_PHASE_ERR_MAX_Q15, C_PHASE_ERR_MAX_Q15);
                     end if;
+                    carrier_err_pll_q15_i := carrier_err_fll_q15_i;
+                    carrier_err_i := carrier_err_fll_q15_i;
                   end if;
 
-                  fcw_floor := C_CODE_NCO_FCW - C_CODE_FCW_DELTA_MAX;
-                  fcw_ceil  := C_CODE_NCO_FCW + C_CODE_FCW_DELTA_MAX;
+                  den_i := early_mag_i + late_mag_i + 1;
+                  ratio_q8_i := (dll_err_i * 256) / den_i;
+                  dll_err_q15_i := clamp_i(ratio_q8_i * 128, -32767, 32767);
 
-                  if dll_err_i > C_DLL_ERR_TRACK_MAX then
-                    if code_fcw_r > (fcw_floor + C_CODE_FCW_STEP) then
-                      code_fcw_r <= code_fcw_r - C_CODE_FCW_STEP;
-                    else
-                      code_fcw_r <= fcw_floor;
-                    end if;
-                  elsif dll_err_i < -C_DLL_ERR_TRACK_MAX then
-                    if code_fcw_r < (fcw_ceil - C_CODE_FCW_STEP) then
-                      code_fcw_r <= code_fcw_r + C_CODE_FCW_STEP;
-                    else
-                      code_fcw_r <= fcw_ceil;
-                    end if;
-                  end if;
-
-                  dopp_i := to_integer(dopp_r);
                   if state_r = TRACK_LOCKED then
-                    carrier_gain_i := to_integer(dopp_step_lock_i);
-                    if carrier_gain_i < C_PLL_ERR_GAIN_MIN then
-                      carrier_gain_i := C_PLL_ERR_GAIN_MIN;
-                    end if;
-                    dopp_i := dopp_i - (carrier_err_i / carrier_gain_i);
+                    pll_bw_sel_i := to_integer(pll_bw_narrow_hz_i);
+                    dll_bw_sel_i := to_integer(dll_bw_narrow_hz_i);
                   else
-                    doppler_step_hz_i := to_integer(dopp_step_pullin_i);
-                    if doppler_step_hz_i < 1 then
-                      doppler_step_hz_i := 1;
-                    end if;
-                    carrier_err_dband_i := C_CARR_ERR_DBAND_PULLIN;
-                    if carrier_err_i > carrier_err_dband_i then
-                      dopp_i := dopp_i - doppler_step_hz_i;
-                    elsif carrier_err_i < -carrier_err_dband_i then
-                      dopp_i := dopp_i + doppler_step_hz_i;
-                    end if;
+                    pll_bw_sel_i := to_integer(pll_bw_hz_i);
+                    dll_bw_sel_i := to_integer(dll_bw_hz_i);
                   end if;
+                  if pll_bw_sel_i < C_PLL_GAIN_MIN_Q8_8 then
+                    pll_bw_sel_i := C_PLL_GAIN_MIN_Q8_8;
+                  end if;
+                  if dll_bw_sel_i < C_DLL_GAIN_MIN_Q8_8 then
+                    dll_bw_sel_i := C_DLL_GAIN_MIN_Q8_8;
+                  end if;
+
+                  -- DLL PI-like fixed-point loop: bandwidth directly scales gains.
+                  code_kp_i := (dll_bw_sel_i * C_CODE_LOOP_KP_PER_HZ_Q8 + 128) / 256;
+                  if code_kp_i < 1 then
+                    code_kp_i := 1;
+                  end if;
+                  code_ki_i := code_kp_i / C_CODE_LOOP_KI_DIV;
+                  if code_ki_i < 1 then
+                    code_ki_i := 1;
+                  end if;
+                  code_delta_i := to_integer(code_loop_i_r) + ((dll_err_q15_i * code_ki_i) / 32768);
+                  code_delta_i := clamp_i(code_delta_i, -to_integer(C_CODE_FCW_DELTA_MAX), to_integer(C_CODE_FCW_DELTA_MAX));
+                  code_loop_i_r <= to_signed(code_delta_i, 32);
+                  code_prop_i := (dll_err_q15_i * code_kp_i) / 32768;
+                  code_delta_i := clamp_i(code_delta_i + code_prop_i, -to_integer(C_CODE_FCW_DELTA_MAX), to_integer(C_CODE_FCW_DELTA_MAX));
+                  if code_delta_i >= 0 then
+                    code_fcw_r <= C_CODE_NCO_FCW + to_unsigned(code_delta_i, 32);
+                  else
+                    code_fcw_r <= C_CODE_NCO_FCW - to_unsigned(-code_delta_i, 32);
+                  end if;
+
+                  if state_r = TRACK_LOCKED then
+                    -- PLL loop filter (wide/narrow selection controlled by state).
+                    carr_kp_i := (pll_bw_sel_i * C_CARR_FCW_PER_HZ + 128) / 256;
+                    if carr_kp_i < 1 then
+                      carr_kp_i := 1;
+                    end if;
+                    carr_ki_i := carr_kp_i / C_PLL_LOOP_KI_DIV;
+                    if carr_ki_i < 1 then
+                      carr_ki_i := 1;
+                    end if;
+                    carr_fcw_i := to_integer(carr_loop_i_r) + ((carrier_err_pll_q15_i * carr_ki_i) / 32768);
+                    carr_fcw_i := clamp_i(carr_fcw_i, -C_CARR_FCW_DELTA_MAX, C_CARR_FCW_DELTA_MAX);
+                    carr_loop_i_r <= to_signed(carr_fcw_i, 32);
+
+                    carr_prop_i := (carrier_err_pll_q15_i * carr_kp_i) / 32768;
+                    carr_fcw_max_step_i := carr_fcw_from_hz_i(to_integer(dopp_step_lock_i));
+                    if carr_fcw_max_step_i < 1 then
+                      carr_fcw_max_step_i := 1;
+                    end if;
+                    carr_prop_i := clamp_i(carr_prop_i, -carr_fcw_max_step_i, carr_fcw_max_step_i);
+                    carr_fcw_i := clamp_i(carr_fcw_i + carr_prop_i, -C_CARR_FCW_DELTA_MAX, C_CARR_FCW_DELTA_MAX);
+                    carr_fcw_cmd_r <= to_signed(carr_fcw_i, 32);
+                  else
+                    -- FLL pull-in filter with configurable bandwidth and rate-limited step.
+                    fll_gain_i := to_integer(fll_bw_hz_i);
+                    if fll_gain_i < C_FLL_GAIN_MIN_Q8_8 then
+                      fll_gain_i := C_FLL_GAIN_MIN_Q8_8;
+                    end if;
+                    carr_kp_i := ((fll_gain_i * C_CARR_FCW_PER_HZ * C_FLL_LOOP_STEP_SCALE) + 128) / 256;
+                    if carr_kp_i < 1 then
+                      carr_kp_i := 1;
+                    end if;
+                    fll_step_i := (carrier_err_fll_q15_i * carr_kp_i) / 32768;
+                    carr_fcw_max_step_i := carr_fcw_from_hz_i(to_integer(dopp_step_pullin_i));
+                    if carr_fcw_max_step_i < 1 then
+                      carr_fcw_max_step_i := 1;
+                    end if;
+                    fll_step_i := clamp_i(fll_step_i, -carr_fcw_max_step_i, carr_fcw_max_step_i);
+                    carr_fcw_i := to_integer(carr_loop_i_r) + fll_step_i;
+                    carr_fcw_i := clamp_i(carr_fcw_i, -C_CARR_FCW_DELTA_MAX, C_CARR_FCW_DELTA_MAX);
+                    carr_loop_i_r <= to_signed(carr_fcw_i, 32);
+                    carr_fcw_cmd_r <= to_signed(carr_fcw_i, 32);
+                  end if;
+
+                  dopp_i := carr_fcw_i / C_CARR_FCW_PER_HZ;
                   dopp_r <= clamp_s16(dopp_i);
 
                   code_enter_v := (prompt_mag_i > C_PROMPT_MAG_MIN) and
                                   (cn0_i >= to_integer(min_cn0_dbhz_i)) and
-                                  (abs_i(dll_err_i) < C_DLL_ERR_LOCK_MAX);
+                                  (abs_i(dll_err_q15_i) < C_DLL_ERR_LOCK_MAX);
                   code_track_v := (prompt_mag_i > C_PROMPT_MAG_MIN) and
                                   (cn0_i >= to_integer(min_cn0_dbhz_i)) and
-                                  (abs_i(dll_err_i) < C_DLL_ERR_TRACK_MAX);
+                                  (abs_i(dll_err_q15_i) < C_DLL_ERR_TRACK_MAX);
                   carrier_enter_th_i := to_integer(carrier_lock_th_i);
                   carrier_track_th_i := carrier_enter_th_i - C_CARR_LOCK_HYST_Q15;
                   if carrier_track_th_i < -32768 then
@@ -743,7 +864,7 @@ begin
                       end if;
                     end if;
                   else
-                    if lock_score_i <= lock_exit_th_i or (not code_track_v) then
+                    if lock_score_i <= lock_exit_th_i then
                       state_r        <= TRACK_PULLIN;
                       code_lock_r    <= '0';
                       carrier_lock_r <= '0';

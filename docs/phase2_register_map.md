@@ -27,6 +27,11 @@ All addresses are byte addresses on the assumed simple control bus.
 - `0x24` maximum consecutive lock-fail epochs before lock drop (unsigned 8)
 - `0x2C` tracking Doppler update step in pull-in state (unsigned 16, Hz)
 - `0x30` tracking Doppler update step in locked state (unsigned 16, Hz)
+- `0x74` PLL bandwidth wide (unsigned 16, Q8.8 Hz)
+- `0x78` DLL bandwidth wide (unsigned 16, Q8.8 Hz)
+- `0x7C` PLL bandwidth narrow (unsigned 16, Q8.8 Hz)
+- `0x80` DLL bandwidth narrow (unsigned 16, Q8.8 Hz)
+- `0x84` FLL bandwidth (unsigned 16, Q8.8 Hz)
 
 ## Status
 - `0x40` global status

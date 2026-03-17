@@ -21,6 +21,11 @@ entity gps_l1_ca_chan_bank is
     max_lock_fail_i   : in  unsigned(7 downto 0);
     dopp_step_pullin_i : in unsigned(15 downto 0);
     dopp_step_lock_i : in unsigned(15 downto 0);
+    pll_bw_hz_i       : in unsigned(15 downto 0);
+    dll_bw_hz_i       : in unsigned(15 downto 0);
+    pll_bw_narrow_hz_i : in unsigned(15 downto 0);
+    dll_bw_narrow_hz_i : in unsigned(15 downto 0);
+    fll_bw_hz_i       : in unsigned(15 downto 0);
     assign_valid_i    : in  std_logic;
     assign_ch_idx_i   : in  unsigned(7 downto 0);
     assign_prn_i      : in  unsigned(5 downto 0);
@@ -122,6 +127,11 @@ begin
         max_lock_fail_i => max_lock_fail_i,
         dopp_step_pullin_i => dopp_step_pullin_i,
         dopp_step_lock_i => dopp_step_lock_i,
+        pll_bw_hz_i     => pll_bw_hz_i,
+        dll_bw_hz_i     => dll_bw_hz_i,
+        pll_bw_narrow_hz_i => pll_bw_narrow_hz_i,
+        dll_bw_narrow_hz_i => dll_bw_narrow_hz_i,
+        fll_bw_hz_i     => fll_bw_hz_i,
         track_state_o  => chan_state_r(i),
         code_lock_o    => chan_code_lock_r(i),
         carrier_lock_o => chan_carrier_lock_r(i),

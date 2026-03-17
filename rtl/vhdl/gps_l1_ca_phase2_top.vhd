@@ -61,6 +61,11 @@ architecture rtl of gps_l1_ca_phase2_top is
   signal max_lock_fail    : unsigned(7 downto 0);
   signal dopp_step_pullin : unsigned(15 downto 0);
   signal dopp_step_lock   : unsigned(15 downto 0);
+  signal pll_bw_hz        : unsigned(15 downto 0);
+  signal dll_bw_hz        : unsigned(15 downto 0);
+  signal pll_bw_narrow_hz : unsigned(15 downto 0);
+  signal dll_bw_narrow_hz : unsigned(15 downto 0);
+  signal fll_bw_hz        : unsigned(15 downto 0);
   signal acq_coh_ms       : unsigned(7 downto 0);
   signal acq_noncoh_dwells: unsigned(7 downto 0);
   signal acq_dopp_bins    : unsigned(7 downto 0);
@@ -232,6 +237,11 @@ begin
       max_lock_fail_o   => max_lock_fail,
       dopp_step_pullin_o => dopp_step_pullin,
       dopp_step_lock_o => dopp_step_lock,
+      pll_bw_hz_o       => pll_bw_hz,
+      dll_bw_hz_o       => dll_bw_hz,
+      pll_bw_narrow_hz_o => pll_bw_narrow_hz,
+      dll_bw_narrow_hz_o => dll_bw_narrow_hz,
+      fll_bw_hz_o       => fll_bw_hz,
       acq_coh_ms_o       => acq_coh_ms,
       acq_noncoh_dwells_o=> acq_noncoh_dwells,
       acq_dopp_bins_o    => acq_dopp_bins,
@@ -320,6 +330,11 @@ begin
       max_lock_fail_i    => max_lock_fail,
       dopp_step_pullin_i => dopp_step_pullin,
       dopp_step_lock_i   => dopp_step_lock,
+      pll_bw_hz_i        => pll_bw_hz,
+      dll_bw_hz_i        => dll_bw_hz,
+      pll_bw_narrow_hz_i => pll_bw_narrow_hz,
+      dll_bw_narrow_hz_i => dll_bw_narrow_hz,
+      fll_bw_hz_i        => fll_bw_hz,
       assign_valid_i     => assign_valid,
       assign_ch_idx_i    => assign_ch_idx,
       assign_prn_i       => assign_prn,

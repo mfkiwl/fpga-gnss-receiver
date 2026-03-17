@@ -34,6 +34,11 @@ architecture tb of gps_l1_ca_chan_bank_tb is
   signal max_lock_fail_i    : unsigned(7 downto 0) := to_unsigned(20, 8);
   signal dopp_step_pullin_i : unsigned(15 downto 0) := to_unsigned(80, 16);
   signal dopp_step_lock_i   : unsigned(15 downto 0) := to_unsigned(20, 16);
+  signal pll_bw_hz_i        : unsigned(15 downto 0) := to_unsigned(8960, 16);
+  signal dll_bw_hz_i        : unsigned(15 downto 0) := to_unsigned(512, 16);
+  signal pll_bw_narrow_hz_i : unsigned(15 downto 0) := to_unsigned(1280, 16);
+  signal dll_bw_narrow_hz_i : unsigned(15 downto 0) := to_unsigned(128, 16);
+  signal fll_bw_hz_i        : unsigned(15 downto 0) := to_unsigned(2560, 16);
   signal assign_valid_i     : std_logic := '0';
   signal assign_ch_idx_i    : unsigned(7 downto 0) := (others => '0');
   signal assign_prn_i       : unsigned(5 downto 0) := (others => '0');
@@ -74,6 +79,11 @@ begin
       max_lock_fail_i    => max_lock_fail_i,
       dopp_step_pullin_i => dopp_step_pullin_i,
       dopp_step_lock_i   => dopp_step_lock_i,
+      pll_bw_hz_i        => pll_bw_hz_i,
+      dll_bw_hz_i        => dll_bw_hz_i,
+      pll_bw_narrow_hz_i => pll_bw_narrow_hz_i,
+      dll_bw_narrow_hz_i => dll_bw_narrow_hz_i,
+      fll_bw_hz_i        => fll_bw_hz_i,
       assign_valid_i     => assign_valid_i,
       assign_ch_idx_i    => assign_ch_idx_i,
       assign_prn_i       => assign_prn_i,

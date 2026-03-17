@@ -65,6 +65,11 @@ entity gps_l1_ca_ctrl_phase2 is
     max_lock_fail_o    : out unsigned(7 downto 0);
     dopp_step_pullin_o : out unsigned(15 downto 0);
     dopp_step_lock_o   : out unsigned(15 downto 0);
+    pll_bw_hz_o        : out unsigned(15 downto 0);
+    dll_bw_hz_o        : out unsigned(15 downto 0);
+    pll_bw_narrow_hz_o : out unsigned(15 downto 0);
+    dll_bw_narrow_hz_o : out unsigned(15 downto 0);
+    fll_bw_hz_o        : out unsigned(15 downto 0);
     acq_coh_ms_o       : out unsigned(7 downto 0);
     acq_noncoh_dwells_o: out unsigned(7 downto 0);
     acq_dopp_bins_o    : out unsigned(7 downto 0);
@@ -101,6 +106,11 @@ architecture rtl of gps_l1_ca_ctrl_phase2 is
   signal max_lock_fail_r   : unsigned(7 downto 0) := to_unsigned(50, 8);
   signal dopp_step_pullin_r: unsigned(15 downto 0) := to_unsigned(80, 16);
   signal dopp_step_lock_r  : unsigned(15 downto 0) := to_unsigned(20, 16);
+  signal pll_bw_hz_r       : unsigned(15 downto 0) := to_unsigned(8960, 16);  -- 35.0 Hz Q8.8
+  signal dll_bw_hz_r       : unsigned(15 downto 0) := to_unsigned(512, 16);   -- 2.0 Hz Q8.8
+  signal pll_bw_narrow_hz_r: unsigned(15 downto 0) := to_unsigned(1280, 16);  -- 5.0 Hz Q8.8
+  signal dll_bw_narrow_hz_r: unsigned(15 downto 0) := to_unsigned(128, 16);   -- 0.5 Hz Q8.8
+  signal fll_bw_hz_r       : unsigned(15 downto 0) := to_unsigned(2560, 16);  -- 10.0 Hz Q8.8
   signal acq_coh_ms_r      : unsigned(7 downto 0) := to_unsigned(1, 8);
   signal acq_noncoh_dwells_r : unsigned(7 downto 0) := to_unsigned(2, 8);
   signal acq_dopp_bins_r   : unsigned(7 downto 0) := to_unsigned(9, 8);
@@ -132,6 +142,11 @@ begin
   max_lock_fail_o    <= max_lock_fail_r;
   dopp_step_pullin_o <= dopp_step_pullin_r;
   dopp_step_lock_o   <= dopp_step_lock_r;
+  pll_bw_hz_o        <= pll_bw_hz_r;
+  dll_bw_hz_o        <= dll_bw_hz_r;
+  pll_bw_narrow_hz_o <= pll_bw_narrow_hz_r;
+  dll_bw_narrow_hz_o <= dll_bw_narrow_hz_r;
+  fll_bw_hz_o        <= fll_bw_hz_r;
   acq_coh_ms_o       <= acq_coh_ms_r;
   acq_noncoh_dwells_o<= acq_noncoh_dwells_r;
   acq_dopp_bins_o    <= acq_dopp_bins_r;
@@ -188,6 +203,16 @@ begin
               dopp_step_pullin_r <= unsigned(ctrl_wdata(15 downto 0));
             when 16#30# =>
               dopp_step_lock_r <= unsigned(ctrl_wdata(15 downto 0));
+            when 16#74# =>
+              pll_bw_hz_r <= unsigned(ctrl_wdata(15 downto 0));
+            when 16#78# =>
+              dll_bw_hz_r <= unsigned(ctrl_wdata(15 downto 0));
+            when 16#7C# =>
+              pll_bw_narrow_hz_r <= unsigned(ctrl_wdata(15 downto 0));
+            when 16#80# =>
+              dll_bw_narrow_hz_r <= unsigned(ctrl_wdata(15 downto 0));
+            when 16#84# =>
+              fll_bw_hz_r <= unsigned(ctrl_wdata(15 downto 0));
             when 16#34# =>
               acq_coh_ms_r <= unsigned(ctrl_wdata(7 downto 0));
             when 16#38# =>
@@ -244,6 +269,16 @@ begin
         rd(15 downto 0) := std_logic_vector(dopp_step_pullin_r);
       when 16#30# =>
         rd(15 downto 0) := std_logic_vector(dopp_step_lock_r);
+      when 16#74# =>
+        rd(15 downto 0) := std_logic_vector(pll_bw_hz_r);
+      when 16#78# =>
+        rd(15 downto 0) := std_logic_vector(dll_bw_hz_r);
+      when 16#7C# =>
+        rd(15 downto 0) := std_logic_vector(pll_bw_narrow_hz_r);
+      when 16#80# =>
+        rd(15 downto 0) := std_logic_vector(dll_bw_narrow_hz_r);
+      when 16#84# =>
+        rd(15 downto 0) := std_logic_vector(fll_bw_hz_r);
       when 16#34# =>
         rd(7 downto 0) := std_logic_vector(acq_coh_ms_r);
       when 16#38# =>
