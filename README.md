@@ -1,43 +1,67 @@
-# HDL Starter Kit (GSD-Driven)
+# FPGA GNSS Receiver (GPS L1 C/A, VHDL)
 
-This repository is a concrete starter implementation of the workflow described in `Phase-1-Plans-and-Goal.md`, `Assumptions.md`, and `Outline.md`:
+> [!WARNING]
+> This repository has a **high potential for AI slop**. Treat docs, plans, and generated code as draft material until validated by simulation, synthesis, and testbench evidence.
 
-- GSD-2 as project manager/orchestrator
-- HDL tools as ground truth (NVC + vendor synthesis flow)
-- Mechanical verification commands through scripts and Make targets
+This project is an FPGA-oriented, VHDL-first GPS L1 C/A receiver effort with:
 
-This now includes a Phase 2 VHDL-first GPS L1 C/A receiver scaffold from `Phase-2-Plans-and-Goal.md`:
+- fixed-rate `cs16` sample ingress (target `2 MSPS`)
+- shared acquisition scheduler + acquisition engine
+- configurable multi-channel tracking bank
+- per-channel nav-bit extraction + shared navigation store
+- observables + placeholder PVT/reporting pipeline
+- phase-based verification flow through `make` targets
 
-- fixed `2 MSPS` `cs16` ingress
-- shared acquisition scheduler + shared acquisition engine
-- configurable multi-channel tracking bank (default `5`)
-- per-channel nav-bit handling and shared nav store
-- observables engine and first FPGA PVT placeholder solver
-- UART report path with channel / observables / PVT packet types
-- simulation PVT logs in human-readable `Lat/Long/Height` with receiver-time / epoch tags
-- expanded control/status register bank
+Current planning and scope documents:
 
-## Layout
+- `Outline.md`
+- `Assumptions.md`
+- `Phase-1-Plans-and-Goal.md`
+- `Phase-2-Plans-and-Goal.md`
+- `Phase-3-Plans-and-Goal.md`
+
+## Repository Layout
 
 ```text
-rtl/
-  vhdl/
-tb/
-  vhdl/
-sim/
-  scripts/
-lint/
-  scripts/
-synth/
-constraints/
-docs/
+rtl/vhdl/      # RTL modules
+tb/vhdl/       # VHDL testbenches
+sim/           # simulation and regression scripts
+lint/          # lint/check scripts
+synth/         # synthesis/schematic scripts
+docs/          # register maps, packet formats, verification notes
+vhdl.files     # compile order source of truth
 ```
 
-## Canonical Commands
+## Quick Start
+
+```bash
+make help
+make lint-vhdl
+make sim-smoke
+make sim-regress
+```
+
+## GNSS Sample Data
+
+Some test flows use the GNSS-SDR sample capture. Fetch and prepare it with:
+
+```bash
+make fetch-gnss-data
+```
+
+This creates/updates:
+
+- `2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/`
+- `2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat` (symlink to the extracted `.dat`)
+
+## Canonical Verification / Build Commands
 
 ```bash
 make lint-vhdl
 make sim-smoke
+make sim-unit
+make sim-chan-bank
+make sim-chan-bank-nav-store
 make sim-acq-file
 make sim-acq-equiv
 make sim-regress
@@ -49,4 +73,8 @@ make schematic-local
 make waves
 ```
 
-See `docs/hdl-workflow.md` for details.
+## Notes
+
+- `vhdl.files` defines compile order and should be treated as the source of truth.
+- Main workflow details: `docs/hdl-workflow.md`
+- Register maps and packet formats: `docs/phase1_register_map.md`, `docs/phase2_register_map.md`, `docs/packet_definition.md`
