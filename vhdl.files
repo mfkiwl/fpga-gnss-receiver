@@ -11,6 +11,11 @@ rtl/vhdl/axis_sample_ingress.vhd
 rtl/vhdl/gps_l1_ca_gain_ctrl.vhd
 rtl/vhdl/gps_l1_ca_ctrl.vhd
 rtl/vhdl/gps_l1_ca_acq_td.vhd
+rtl/vhdl/acquisition/gps_l1_ca_acq_fft_pkg.vhd
+rtl/vhdl/acquisition/gps_l1_ca_acq_fft_prn_gen.vhd
+rtl/vhdl/acquisition/gps_l1_ca_acq_fft_code_gen.vhd
+rtl/vhdl/acquisition/gps_l1_ca_acq_fft_mix_fft.vhd
+rtl/vhdl/acquisition/gps_l1_ca_acq_fft_corr.vhd
 rtl/vhdl/gps_l1_ca_acq_fft.vhd
 rtl/vhdl/gps_l1_ca_acq.vhd
 rtl/vhdl/gps_l1_ca_track_chan.vhd
@@ -36,3 +41,8 @@ tb/vhdl/gps_l1_ca_chan_bank_nav_store_tb.vhd
 tb/vhdl/gps_l1_ca_nav_store_tb.vhd
 tb/vhdl/gps_l1_ca_observables_tb.vhd
 tb/vhdl/gps_l1_ca_pvt_tb.vhd
+tb/vhdl/gps_l1_ca_acq_fft_prn_gen_tb.vhd
+tb/vhdl/gps_l1_ca_acq_fft_code_gen_tb.vhd
+tb/vhdl/gps_l1_ca_acq_fft_mix_fft_tb.vhd
+tb/vhdl/gps_l1_ca_acq_fft_corr_tb.vhd
+tb/vhdl/gps_l1_ca_acq_fft_tb.vhd

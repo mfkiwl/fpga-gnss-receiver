@@ -2,8 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.gps_l1_ca_pkg.all;
-use work.gps_l1_ca_log_pkg.all;
-use work.gps_l1_ca_nco_pkg.all;
+use work.gps_l1_ca_acq_fft_pkg.all;
 
 entity gps_l1_ca_acq_fft is
   generic (
@@ -41,47 +40,19 @@ end entity;
 architecture rtl of gps_l1_ca_acq_fft is
   type state_t is (
     IDLE,
-    PRN_PREP,
+    PRN_SEQ_START,
+    PRN_SEQ_WAIT,
+    PRN_PREP_START,
+    PRN_PREP_WAIT,
     CAPTURE_MS,
-    DOPP_PREP,
-    DOPP_PROCESS,
+    DOPP_PREP_START,
+    DOPP_PREP_WAIT,
+    DOPP_PROCESS_START,
+    DOPP_PROCESS_WAIT,
     COH_COMMIT,
     PRN_EVAL,
     FINALIZE
   );
-
-  constant C_CARR_FCW_PER_HZ : integer := 2147;
-  constant C_DEF_COH_MS       : integer := 1;
-  constant C_DEF_CODE_BINS    : integer := 16;
-  constant C_DEF_CODE_STEP    : integer := 64;
-  constant C_DEF_DOPP_BINS    : integer := 9;
-  constant C_MAX_CODE_BINS    : integer := 1023;
-  constant C_MAX_DOPP_BINS    : integer := 81;
-  constant C_MAX_BINS         : integer := C_MAX_CODE_BINS * C_MAX_DOPP_BINS;
-  constant C_NFFT             : integer := 2048;
-  constant C_FFT_BITS         : integer := 11;
-
-  type sample_arr_t is array (0 to C_SAMPLES_PER_MS - 1) of signed(15 downto 0);
-  type metric_arr_t is array (0 to C_MAX_BINS - 1) of unsigned(31 downto 0);
-  type coh_arr_t is array (0 to C_MAX_BINS - 1) of signed(55 downto 0);
-  type code_arr_t is array (0 to C_MAX_BINS - 1) of unsigned(10 downto 0);
-  type dopp_arr_t is array (0 to C_MAX_BINS - 1) of signed(15 downto 0);
-  type prn_seq_t is array (0 to 1022) of std_logic;
-
-  type cpx32_t is record
-    re : signed(31 downto 0);
-    im : signed(31 downto 0);
-  end record;
-
-  type cpx32_vec_t is array (0 to C_NFFT - 1) of cpx32_t;
-  type cpx32_bank_t is array (0 to C_MAX_CODE_BINS - 1) of cpx32_vec_t;
-
-  constant C_CPX_ZERO : cpx32_t := (
-    re => (others => '0'),
-    im => (others => '0')
-  );
-  constant C_S32_MAX : signed(31 downto 0) := signed'(x"7FFFFFFF");
-  constant C_S32_MIN : signed(31 downto 0) := signed'(x"80000000");
 
   signal state_r              : state_t := IDLE;
   signal prn_cur_r            : unsigned(5 downto 0) := to_unsigned(1, 6);
@@ -128,431 +99,24 @@ architecture rtl of gps_l1_ca_acq_fft is
   signal acq_success_r        : std_logic := '0';
   signal result_valid_r       : std_logic := '0';
 
-  function abs_i(x : integer) return integer is
-  begin
-    if x < 0 then
-      return -x;
-    end if;
-    return x;
-  end function;
+  signal prn_gen_start_r      : std_logic := '0';
+  signal prn_req_prn_r        : unsigned(5 downto 0) := to_unsigned(1, 6);
+  signal prn_gen_done_s       : std_logic;
+  signal prn_seq_s            : prn_seq_t;
 
-  function sat_add_u32(
-    a : unsigned(31 downto 0);
-    b : unsigned(31 downto 0)
-  ) return u32_t is
-    variable sum_v : unsigned(32 downto 0);
-  begin
-    sum_v := ('0' & a) + ('0' & b);
-    if sum_v(32) = '1' then
-      return (others => '1');
-    end if;
-    return sum_v(31 downto 0);
-  end function;
+  signal code_gen_start_r     : std_logic := '0';
+  signal code_gen_done_s      : std_logic;
+  signal code_fft_s           : cpx32_vec_t;
 
-  function abs_s56_sat_u32(x : signed(55 downto 0)) return u32_t is
-    variable ax : unsigned(55 downto 0);
-  begin
-    if x < 0 then
-      ax := unsigned(-x);
-    else
-      ax := unsigned(x);
-    end if;
+  signal mix_fft_start_r      : std_logic := '0';
+  signal mix_fft_done_s       : std_logic;
+  signal mix_fft_s            : cpx32_vec_t;
 
-    if ax(55 downto 32) /= (ax(55 downto 32)'range => '0') then
-      return (others => '1');
-    end if;
-    return ax(31 downto 0);
-  end function;
-
-  function clamp_s16(x : integer) return signed is
-  begin
-    if x > 32767 then
-      return to_signed(32767, 16);
-    elsif x < -32768 then
-      return to_signed(-32768, 16);
-    else
-      return to_signed(x, 16);
-    end if;
-  end function;
-
-  function u32_img(x : unsigned(31 downto 0)) return string is
-  begin
-    if x(31) = '1' then
-      return "0x" & to_hstring(std_logic_vector(x));
-    end if;
-    return integer'image(to_integer(x));
-  end function;
-
-  function carr_fcw_from_hz(dopp_hz : signed(15 downto 0)) return signed is
-  begin
-    return to_signed(to_integer(dopp_hz) * C_CARR_FCW_PER_HZ, 32);
-  end function;
-
-  function g2_tap_a(prn_i : integer) return integer is
-  begin
-    case prn_i is
-      when 1  => return 2;
-      when 2  => return 3;
-      when 3  => return 4;
-      when 4  => return 5;
-      when 5  => return 1;
-      when 6  => return 2;
-      when 7  => return 1;
-      when 8  => return 2;
-      when 9  => return 3;
-      when 10 => return 2;
-      when 11 => return 3;
-      when 12 => return 5;
-      when 13 => return 6;
-      when 14 => return 7;
-      when 15 => return 8;
-      when 16 => return 9;
-      when 17 => return 1;
-      when 18 => return 2;
-      when 19 => return 3;
-      when 20 => return 4;
-      when 21 => return 5;
-      when 22 => return 6;
-      when 23 => return 1;
-      when 24 => return 4;
-      when 25 => return 5;
-      when 26 => return 6;
-      when 27 => return 7;
-      when 28 => return 8;
-      when 29 => return 1;
-      when 30 => return 2;
-      when 31 => return 3;
-      when others => return 4;
-    end case;
-  end function;
-
-  function g2_tap_b(prn_i : integer) return integer is
-  begin
-    case prn_i is
-      when 1  => return 6;
-      when 2  => return 7;
-      when 3  => return 8;
-      when 4  => return 9;
-      when 5  => return 9;
-      when 6  => return 10;
-      when 7  => return 8;
-      when 8  => return 9;
-      when 9  => return 10;
-      when 10 => return 3;
-      when 11 => return 4;
-      when 12 => return 6;
-      when 13 => return 7;
-      when 14 => return 8;
-      when 15 => return 9;
-      when 16 => return 10;
-      when 17 => return 4;
-      when 18 => return 5;
-      when 19 => return 6;
-      when 20 => return 7;
-      when 21 => return 8;
-      when 22 => return 9;
-      when 23 => return 3;
-      when 24 => return 6;
-      when 25 => return 7;
-      when 26 => return 8;
-      when 27 => return 9;
-      when 28 => return 10;
-      when 29 => return 6;
-      when 30 => return 7;
-      when 31 => return 8;
-      when others => return 9;
-    end case;
-  end function;
-
-  function build_prn_sequence(prn_i : integer) return prn_seq_t is
-    variable g1 : std_logic_vector(9 downto 0);
-    variable g2 : std_logic_vector(9 downto 0);
-    variable g1_out : std_logic;
-    variable g2_out : std_logic;
-    variable fb1 : std_logic;
-    variable fb2 : std_logic;
-    variable ta  : integer;
-    variable tb  : integer;
-    variable seq_v : prn_seq_t;
-  begin
-    g1 := (others => '1');
-    g2 := (others => '1');
-    ta := g2_tap_a(prn_i);
-    tb := g2_tap_b(prn_i);
-
-    for chip in 0 to 1022 loop
-      g1_out := g1(9);
-      g2_out := g2(10 - ta) xor g2(10 - tb);
-      seq_v(chip) := g1_out xor g2_out;
-
-      fb1 := g1(2) xor g1(9);
-      fb2 := g2(1) xor g2(2) xor g2(5) xor g2(7) xor g2(8) xor g2(9);
-
-      g1 := g1(8 downto 0) & fb1;
-      g2 := g2(8 downto 0) & fb2;
-    end loop;
-    return seq_v;
-  end function;
-
-  function sat_resize_s32(x : signed) return signed is
-    variable lo : signed(31 downto 0);
-  begin
-    if x'length <= 32 then
-      return resize(x, 32);
-    end if;
-
-    lo := x(31 downto 0);
-    if resize(lo, x'length) /= x then
-      if x(x'high) = '1' then
-        return C_S32_MIN;
-      else
-        return C_S32_MAX;
-      end if;
-    end if;
-
-    return lo;
-  end function;
-
-  function div_pow2_tz(x : signed; sh : natural) return signed is
-  begin
-    if sh = 0 then
-      return x;
-    end if;
-
-    if x < 0 then
-      return -shift_right(-x, sh);
-    end if;
-    return shift_right(x, sh);
-  end function;
-
-  function cpx_add_sat(a : cpx32_t; b : cpx32_t) return cpx32_t is
-    variable out_v  : cpx32_t;
-    variable sum_re : signed(32 downto 0);
-    variable sum_im : signed(32 downto 0);
-  begin
-    sum_re := resize(a.re, 33) + resize(b.re, 33);
-    sum_im := resize(a.im, 33) + resize(b.im, 33);
-    out_v.re := sat_resize_s32(sum_re);
-    out_v.im := sat_resize_s32(sum_im);
-    return out_v;
-  end function;
-
-  function cpx_sub_sat(a : cpx32_t; b : cpx32_t) return cpx32_t is
-    variable out_v  : cpx32_t;
-    variable sum_re : signed(32 downto 0);
-    variable sum_im : signed(32 downto 0);
-  begin
-    sum_re := resize(a.re, 33) - resize(b.re, 33);
-    sum_im := resize(a.im, 33) - resize(b.im, 33);
-    out_v.re := sat_resize_s32(sum_re);
-    out_v.im := sat_resize_s32(sum_im);
-    return out_v;
-  end function;
-
-  function cpx_mul_q15(
-    a  : cpx32_t;
-    wr : signed(15 downto 0);
-    wi : signed(15 downto 0)
-  ) return cpx32_t is
-    variable out_v     : cpx32_t;
-    variable rr        : signed(47 downto 0);
-    variable ii        : signed(47 downto 0);
-    variable ri        : signed(47 downto 0);
-    variable ir        : signed(47 downto 0);
-    variable sum_re    : signed(48 downto 0);
-    variable sum_im    : signed(48 downto 0);
-    variable scale_re  : signed(48 downto 0);
-    variable scale_im  : signed(48 downto 0);
-  begin
-    rr := a.re * wr;
-    ii := a.im * wi;
-    ri := a.re * wi;
-    ir := a.im * wr;
-
-    sum_re := resize(rr, 49) - resize(ii, 49);
-    sum_im := resize(ri, 49) + resize(ir, 49);
-
-    scale_re := div_pow2_tz(sum_re, 15);
-    scale_im := div_pow2_tz(sum_im, 15);
-
-    out_v.re := sat_resize_s32(scale_re);
-    out_v.im := sat_resize_s32(scale_im);
-    return out_v;
-  end function;
-
-  function bit_reverse(i : integer; bits : integer) return integer is
-    variable in_v  : integer := i;
-    variable out_v : integer := 0;
-  begin
-    for b in 0 to bits - 1 loop
-      out_v := (out_v * 2) + (in_v mod 2);
-      in_v := in_v / 2;
-    end loop;
-    return out_v;
-  end function;
-
-  function fft_radix2(x : cpx32_vec_t; inverse : boolean) return cpx32_vec_t is
-    variable a      : cpx32_vec_t := (others => C_CPX_ZERO);
-    variable len_i  : integer;
-    variable half_i : integer;
-    variable base_i : integer;
-    variable j      : integer;
-    variable idx    : integer;
-    variable tw_idx : integer;
-    variable wr     : signed(15 downto 0);
-    variable wi     : signed(15 downto 0);
-    variable u      : cpx32_t;
-    variable t      : cpx32_t;
-  begin
-    for i in 0 to C_NFFT - 1 loop
-      a(bit_reverse(i, C_FFT_BITS)) := x(i);
-    end loop;
-
-    len_i := 2;
-    while len_i <= C_NFFT loop
-      half_i := len_i / 2;
-      base_i := 0;
-      while base_i < C_NFFT loop
-        for k in 0 to half_i - 1 loop
-          j := base_i + k;
-          tw_idx := (k * 1024) / len_i;
-          wr := lo_cos_q15(to_unsigned(tw_idx, 10));
-          if inverse then
-            wi := lo_sin_q15(to_unsigned(tw_idx, 10));
-          else
-            wi := -lo_sin_q15(to_unsigned(tw_idx, 10));
-          end if;
-
-          t := cpx_mul_q15(a(j + half_i), wr, wi);
-          u := a(j);
-
-          a(j)          := cpx_add_sat(u, t);
-          a(j + half_i) := cpx_sub_sat(u, t);
-        end loop;
-        base_i := base_i + len_i;
-      end loop;
-      len_i := len_i * 2;
-    end loop;
-
-    if inverse then
-      for i in 0 to C_NFFT - 1 loop
-        a(i).re := sat_resize_s32(div_pow2_tz(a(i).re, C_FFT_BITS));
-        a(i).im := sat_resize_s32(div_pow2_tz(a(i).im, C_FFT_BITS));
-      end loop;
-    end if;
-
-    return a;
-  end function;
-
-  function build_code_fft_input(prn_seq : prn_seq_t; code_start : integer) return cpx32_vec_t is
-    variable out_v         : cpx32_vec_t := (others => C_CPX_ZERO);
-    variable chip_idx      : integer;
-    variable code_nco      : unsigned(31 downto 0);
-    variable next_code_nco : unsigned(31 downto 0);
-  begin
-    chip_idx := code_start mod 1023;
-    if chip_idx < 0 then
-      chip_idx := chip_idx + 1023;
-    end if;
-
-    code_nco := shift_left(to_unsigned(chip_idx, 32), 21);
-
-    for s in 0 to C_SAMPLES_PER_MS - 1 loop
-      if prn_seq(chip_idx) = '1' then
-        out_v(s).re := to_signed(-1, 32);
-      else
-        out_v(s).re := to_signed(1, 32);
-      end if;
-      out_v(s).im := (others => '0');
-
-      next_code_nco := code_nco + C_CODE_NCO_FCW;
-      if next_code_nco < code_nco then
-        if chip_idx = 1022 then
-          chip_idx := 0;
-        else
-          chip_idx := chip_idx + 1;
-        end if;
-      end if;
-      code_nco := next_code_nco;
-    end loop;
-
-    return out_v;
-  end function;
-
-  function build_mixed_fft_input(
-    cap_i   : sample_arr_t;
-    cap_q   : sample_arr_t;
-    dopp_hz : signed(15 downto 0)
-  ) return cpx32_vec_t is
-    variable out_v      : cpx32_vec_t := (others => C_CPX_ZERO);
-    variable carr_phase : signed(31 downto 0) := (others => '0');
-    variable carr_fcw   : signed(31 downto 0);
-    variable phase_idx  : integer;
-    variable lo_i       : signed(15 downto 0);
-    variable lo_q       : signed(15 downto 0);
-    variable prod_ii    : signed(31 downto 0);
-    variable prod_qq    : signed(31 downto 0);
-    variable prod_iq    : signed(31 downto 0);
-    variable prod_qi    : signed(31 downto 0);
-    variable mix_re     : signed(32 downto 0);
-    variable mix_im     : signed(32 downto 0);
-  begin
-    carr_fcw := carr_fcw_from_hz(dopp_hz);
-
-    for s in 0 to C_SAMPLES_PER_MS - 1 loop
-      phase_idx := to_integer(unsigned(carr_phase(31 downto 22)));
-      lo_i := lo_cos_q15(to_unsigned(phase_idx, 10));
-      lo_q := -lo_sin_q15(to_unsigned(phase_idx, 10));
-
-      prod_ii := cap_i(s) * lo_i;
-      prod_qq := cap_q(s) * lo_q;
-      prod_iq := cap_i(s) * lo_q;
-      prod_qi := cap_q(s) * lo_i;
-
-      mix_re := resize(prod_ii, 33) - resize(prod_qq, 33);
-      mix_im := resize(prod_iq, 33) + resize(prod_qi, 33);
-
-      out_v(s).re := sat_resize_s32(div_pow2_tz(mix_re, 15));
-      out_v(s).im := sat_resize_s32(div_pow2_tz(mix_im, 15));
-
-      carr_phase := carr_phase + carr_fcw;
-    end loop;
-
-    return out_v;
-  end function;
-
-  function corr0_from_spectra(
-    sig_fft  : cpx32_vec_t;
-    code_fft : cpx32_vec_t
-  ) return cpx32_t is
-    variable out_v   : cpx32_t := C_CPX_ZERO;
-    variable acc_re  : signed(79 downto 0) := (others => '0');
-    variable acc_im  : signed(79 downto 0) := (others => '0');
-    variable prod_rr : signed(63 downto 0);
-    variable prod_ii : signed(63 downto 0);
-    variable prod_ir : signed(63 downto 0);
-    variable prod_ri : signed(63 downto 0);
-    variable term_re : signed(64 downto 0);
-    variable term_im : signed(64 downto 0);
-  begin
-    for k in 0 to C_NFFT - 1 loop
-      prod_rr := sig_fft(k).re * code_fft(k).re;
-      prod_ii := sig_fft(k).im * code_fft(k).im;
-      prod_ir := sig_fft(k).im * code_fft(k).re;
-      prod_ri := sig_fft(k).re * code_fft(k).im;
-
-      term_re := resize(prod_rr, 65) + resize(prod_ii, 65);
-      term_im := resize(prod_ir, 65) - resize(prod_ri, 65);
-
-      acc_re := acc_re + resize(term_re, 80);
-      acc_im := acc_im + resize(term_im, 80);
-    end loop;
-
-    out_v.re := sat_resize_s32(div_pow2_tz(acc_re, C_FFT_BITS));
-    out_v.im := sat_resize_s32(div_pow2_tz(acc_im, C_FFT_BITS));
-    return out_v;
-  end function;
-
+  signal corr_start_r         : std_logic := '0';
+  signal corr_done_s          : std_logic;
+  signal corr_s               : cpx32_t;
+  signal mix_dopp_hz_s        : signed(15 downto 0);
+  signal corr_code_fft_s      : cpx32_vec_t;
 begin
   acq_done      <= acq_done_r;
   acq_success   <= acq_success_r;
@@ -561,6 +125,53 @@ begin
   result_dopp   <= best_dopp_r;
   result_code   <= best_code_r;
   result_metric <= best_metric_r;
+
+  mix_dopp_hz_s   <= bin_dopp_r(dopp_idx_r * active_code_bins_r);
+  corr_code_fft_s <= code_fft_r(code_eval_idx_r);
+
+  prn_gen_u : entity work.gps_l1_ca_acq_fft_prn_gen
+    port map (
+      clk    => clk,
+      rst_n  => rst_n,
+      start  => prn_gen_start_r,
+      prn_i  => prn_req_prn_r,
+      seq_o  => prn_seq_s,
+      done_o => prn_gen_done_s
+    );
+
+  code_gen_u : entity work.gps_l1_ca_acq_fft_code_gen
+    port map (
+      clk          => clk,
+      rst_n        => rst_n,
+      start        => code_gen_start_r,
+      prn_seq_i    => prn_seq_r,
+      code_start_i => bin_code_r(prep_code_idx_r),
+      code_fft_o   => code_fft_s,
+      done_o       => code_gen_done_s
+    );
+
+  mix_fft_u : entity work.gps_l1_ca_acq_fft_mix_fft
+    port map (
+      clk          => clk,
+      rst_n        => rst_n,
+      start        => mix_fft_start_r,
+      cap_i_i      => cap_i_r,
+      cap_q_i      => cap_q_r,
+      dopp_hz_i    => mix_dopp_hz_s,
+      signal_fft_o => mix_fft_s,
+      done_o       => mix_fft_done_s
+    );
+
+  corr_u : entity work.gps_l1_ca_acq_fft_corr
+    port map (
+      clk        => clk,
+      rst_n      => rst_n,
+      start      => corr_start_r,
+      sig_fft_i  => signal_fft_r,
+      code_fft_i => corr_code_fft_s,
+      corr_o     => corr_s,
+      done_o     => corr_done_s
+    );
 
   process (clk)
     variable coh_cfg_i         : integer;
@@ -583,7 +194,6 @@ begin
     variable c_i               : integer;
     variable code_i            : integer;
     variable dopp_hz_i         : integer;
-    variable dopp_bin_base_i   : integer;
     variable next_prn_i        : integer;
 
     variable coh_metric_v      : unsigned(31 downto 0);
@@ -591,7 +201,6 @@ begin
     variable prn_metric_next_v : unsigned(31 downto 0);
     variable prn_code_next_v   : unsigned(10 downto 0);
     variable prn_dopp_next_v   : signed(15 downto 0);
-    variable corr_v            : cpx32_t;
   begin
     if rising_edge(clk) then
       if rst_n = '0' then
@@ -621,6 +230,12 @@ begin
         acq_success_r       <= '0';
         result_valid_r      <= '0';
 
+        prn_gen_start_r     <= '0';
+        code_gen_start_r    <= '0';
+        mix_fft_start_r     <= '0';
+        corr_start_r        <= '0';
+        prn_req_prn_r       <= to_unsigned(1, 6);
+
         for i in 0 to C_MAX_BINS - 1 loop
           noncoh_metric_r(i) <= (others => '0');
           coh_i_acc_r(i) <= (others => '0');
@@ -632,8 +247,12 @@ begin
           prn_seq_r(i) <= '0';
         end loop;
       else
-        acq_done_r     <= '0';
-        result_valid_r <= '0';
+        acq_done_r      <= '0';
+        result_valid_r  <= '0';
+        prn_gen_start_r <= '0';
+        code_gen_start_r <= '0';
+        mix_fft_start_r <= '0';
+        corr_start_r    <= '0';
 
         case state_r is
           when IDLE =>
@@ -740,8 +359,6 @@ begin
                 end loop;
               end loop;
 
-              prn_seq_r <= build_prn_sequence(to_integer(prn_start));
-
               active_code_bins_r  <= active_code_i;
               active_dopp_bins_r  <= active_dopp_i;
               active_total_bins_r <= total_bins_i;
@@ -749,6 +366,7 @@ begin
               active_noncoh_r     <= noncoh_cfg_i;
 
               prn_cur_r           <= prn_start;
+              prn_req_prn_r       <= prn_start;
               cap_sample_idx_r    <= 0;
               coh_ms_idx_r        <= 0;
               noncoh_idx_r        <= 0;
@@ -765,22 +383,37 @@ begin
               best_code_r         <= (others => '0');
               best_dopp_r         <= (others => '0');
 
-              state_r <= PRN_PREP;
+              state_r <= PRN_SEQ_START;
             end if;
 
-          when PRN_PREP =>
-            code_fft_r(prep_code_idx_r) <= fft_radix2(
-              build_code_fft_input(prn_seq_r, to_integer(bin_code_r(prep_code_idx_r))),
-              false
-            );
+          when PRN_SEQ_START =>
+            prn_gen_start_r <= '1';
+            state_r <= PRN_SEQ_WAIT;
 
-            if prep_code_idx_r + 1 >= active_code_bins_r then
-              cap_sample_idx_r <= 0;
-              dopp_idx_r <= 0;
-              code_eval_idx_r <= 0;
-              state_r <= CAPTURE_MS;
-            else
-              prep_code_idx_r <= prep_code_idx_r + 1;
+          when PRN_SEQ_WAIT =>
+            if prn_gen_done_s = '1' then
+              prn_seq_r <= prn_seq_s;
+              prep_code_idx_r <= 0;
+              state_r <= PRN_PREP_START;
+            end if;
+
+          when PRN_PREP_START =>
+            code_gen_start_r <= '1';
+            state_r <= PRN_PREP_WAIT;
+
+          when PRN_PREP_WAIT =>
+            if code_gen_done_s = '1' then
+              code_fft_r(prep_code_idx_r) <= code_fft_s;
+
+              if prep_code_idx_r + 1 >= active_code_bins_r then
+                cap_sample_idx_r <= 0;
+                dopp_idx_r <= 0;
+                code_eval_idx_r <= 0;
+                state_r <= CAPTURE_MS;
+              else
+                prep_code_idx_r <= prep_code_idx_r + 1;
+                state_r <= PRN_PREP_START;
+              end if;
             end if;
 
           when CAPTURE_MS =>
@@ -790,43 +423,51 @@ begin
               if cap_sample_idx_r = C_SAMPLES_PER_MS - 1 then
                 dopp_idx_r <= 0;
                 code_eval_idx_r <= 0;
-                state_r <= DOPP_PREP;
+                state_r <= DOPP_PREP_START;
               else
                 cap_sample_idx_r <= cap_sample_idx_r + 1;
               end if;
             end if;
 
-          when DOPP_PREP =>
-            dopp_bin_base_i := dopp_idx_r * active_code_bins_r;
-            signal_fft_r <= fft_radix2(
-              build_mixed_fft_input(cap_i_r, cap_q_r, bin_dopp_r(dopp_bin_base_i)),
-              false
-            );
-            code_eval_idx_r <= 0;
-            state_r <= DOPP_PROCESS;
+          when DOPP_PREP_START =>
+            mix_fft_start_r <= '1';
+            state_r <= DOPP_PREP_WAIT;
 
-          when DOPP_PROCESS =>
-            bin_i := (dopp_idx_r * active_code_bins_r) + code_eval_idx_r;
-            corr_v := corr0_from_spectra(signal_fft_r, code_fft_r(code_eval_idx_r));
-            coh_i_acc_r(bin_i) <= coh_i_acc_r(bin_i) + resize(corr_v.re, coh_i_acc_r(bin_i)'length);
-            coh_q_acc_r(bin_i) <= coh_q_acc_r(bin_i) + resize(corr_v.im, coh_q_acc_r(bin_i)'length);
+          when DOPP_PREP_WAIT =>
+            if mix_fft_done_s = '1' then
+              signal_fft_r <= mix_fft_s;
+              code_eval_idx_r <= 0;
+              state_r <= DOPP_PROCESS_START;
+            end if;
 
-            if code_eval_idx_r + 1 >= active_code_bins_r then
-              if dopp_idx_r + 1 >= active_dopp_bins_r then
-                if coh_ms_idx_r + 1 >= active_coh_ms_r then
-                  finalize_bin_idx_r <= 0;
-                  state_r <= COH_COMMIT;
+          when DOPP_PROCESS_START =>
+            corr_start_r <= '1';
+            state_r <= DOPP_PROCESS_WAIT;
+
+          when DOPP_PROCESS_WAIT =>
+            if corr_done_s = '1' then
+              bin_i := (dopp_idx_r * active_code_bins_r) + code_eval_idx_r;
+              coh_i_acc_r(bin_i) <= coh_i_acc_r(bin_i) + resize(corr_s.re, coh_i_acc_r(bin_i)'length);
+              coh_q_acc_r(bin_i) <= coh_q_acc_r(bin_i) + resize(corr_s.im, coh_q_acc_r(bin_i)'length);
+
+              if code_eval_idx_r + 1 >= active_code_bins_r then
+                if dopp_idx_r + 1 >= active_dopp_bins_r then
+                  if coh_ms_idx_r + 1 >= active_coh_ms_r then
+                    finalize_bin_idx_r <= 0;
+                    state_r <= COH_COMMIT;
+                  else
+                    coh_ms_idx_r <= coh_ms_idx_r + 1;
+                    cap_sample_idx_r <= 0;
+                    state_r <= CAPTURE_MS;
+                  end if;
                 else
-                  coh_ms_idx_r <= coh_ms_idx_r + 1;
-                  cap_sample_idx_r <= 0;
-                  state_r <= CAPTURE_MS;
+                  dopp_idx_r <= dopp_idx_r + 1;
+                  state_r <= DOPP_PREP_START;
                 end if;
               else
-                dopp_idx_r <= dopp_idx_r + 1;
-                state_r <= DOPP_PREP;
+                code_eval_idx_r <= code_eval_idx_r + 1;
+                state_r <= DOPP_PROCESS_START;
               end if;
-            else
-              code_eval_idx_r <= code_eval_idx_r + 1;
             end if;
 
           when COH_COMMIT =>
@@ -885,7 +526,7 @@ begin
                 end if;
 
                 prn_cur_r <= to_unsigned(next_prn_i, prn_cur_r'length);
-                prn_seq_r <= build_prn_sequence(next_prn_i);
+                prn_req_prn_r <= to_unsigned(next_prn_i, prn_req_prn_r'length);
                 prep_code_idx_r <= 0;
                 cap_sample_idx_r <= 0;
                 coh_ms_idx_r <= 0;
@@ -899,7 +540,7 @@ begin
                   coh_q_acc_r(i) <= (others => '0');
                 end loop;
 
-                state_r <= PRN_PREP;
+                state_r <= PRN_SEQ_START;
               end if;
             else
               prn_best_metric_r <= prn_metric_next_v;
