@@ -145,10 +145,16 @@ def main() -> int:
     dut = parse_log(log_path)
     missing = sorted(tag for tag in TAG_TO_PRN if tag not in dut)
     if missing:
+        found = sorted(dut.keys())
         print(f"ERROR: missing required ACQ_TUPLE tags: {', '.join(missing)}", file=sys.stderr)
+        print(
+            f"ERROR: tags found in log ({len(found)}): {', '.join(found) if found else '<none>'}",
+            file=sys.stderr,
+        )
         return 1
 
     rows: List[Dict[str, object]] = []
+    failed_rows: List[Dict[str, object]] = []
     hard_fail = False
     precomputed_ref = parse_reference_csv(reference_csv) if reference_csv else {}
     reference_source = (
@@ -184,6 +190,28 @@ def main() -> int:
             "delta_metric": metric_delta,
             "delta_metric_rel": metric_rel,
         }
+        fail_reasons: List[str] = []
+        if d["success"] != 1:
+            fail_reasons.append(f"success={d['success']} (expected 1)")
+        if d["valid"] != 1:
+            fail_reasons.append(f"valid={d['valid']} (expected 1)")
+        if d["prn"] != prn:
+            fail_reasons.append(f"prn={d['prn']} (expected {prn})")
+        if code_delta != 0:
+            fail_reasons.append(
+                f"code mismatch: dut={d['code']} ref={ref['code']} delta={code_delta}"
+            )
+        if dopp_delta != 0:
+            fail_reasons.append(
+                f"dopp mismatch: dut={d['dopp']} ref={ref['dopp']} delta={dopp_delta}"
+            )
+        if metric_rel > args.metric_rel_tol:
+            fail_reasons.append(
+                f"metric mismatch: dut={d['metric']} ref={ref['metric']} "
+                f"delta={metric_delta} rel={metric_rel:.6f} tol={args.metric_rel_tol:.6f}"
+            )
+
+        row["fail_reasons"] = fail_reasons
         row["pass"] = (
             d["success"] == 1
             and d["valid"] == 1
@@ -194,6 +222,7 @@ def main() -> int:
         )
         if not row["pass"]:
             hard_fail = True
+            failed_rows.append(row)
         rows.append(row)
 
     with report_csv.open("w", encoding="utf-8") as f:
@@ -215,6 +244,8 @@ def main() -> int:
         "input_file": str(input_file),
         "reference_source": reference_source,
         "metric_rel_tol": args.metric_rel_tol,
+        "total_tags": len(rows),
+        "failed_tags": len(failed_rows),
         "rows": rows,
         "pass": not hard_fail,
     }
@@ -223,6 +254,18 @@ def main() -> int:
 
     if hard_fail:
         print("ACQ tuple GNSS-DSP comparison failed.", file=sys.stderr)
+        print(
+            f"ERROR: {len(failed_rows)}/{len(rows)} ACQ tuples did not match reference.",
+            file=sys.stderr,
+        )
+        for row in failed_rows:
+            tag = row["tag"]
+            prn = row["prn"]
+            reasons = row["fail_reasons"]
+            reason_text = "; ".join(str(r) for r in reasons) if reasons else "unknown mismatch"
+            print(f"ERROR: tag={tag} prn={prn}: {reason_text}", file=sys.stderr)
+        print(f"ERROR: detailed JSON report: {report_json}", file=sys.stderr)
+        print(f"ERROR: detailed CSV report: {report_csv}", file=sys.stderr)
         return 1
 
     print("ACQ tuple GNSS-DSP comparison passed.")

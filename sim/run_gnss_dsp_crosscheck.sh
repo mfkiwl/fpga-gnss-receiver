@@ -69,6 +69,7 @@ if python3 sim/compare_acq_tuples_gnss_dsp.py \
 else
   if [[ "${GNSS_CROSSCHECK_STRICT}" == "1" || "${GNSS_CROSSCHECK_STRICT}" == "true" || "${GNSS_CROSSCHECK_STRICT}" == "TRUE" ]]; then
     echo "error: GNSS-DSP tuple comparison failed in strict mode."
+    echo "error: see sim/reports/acq_tuple_diff.json and sim/reports/acq_tuple_diff.csv for full details."
     exit 1
   fi
   echo "warning: GNSS-DSP tuple comparison failed (non-strict mode); report saved to sim/reports/acq_tuple_diff.{json,csv}"
