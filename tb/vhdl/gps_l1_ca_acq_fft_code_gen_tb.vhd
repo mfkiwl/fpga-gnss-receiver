@@ -101,9 +101,15 @@ begin
 
     variable prn_seq_v      : prn_seq_t;
     variable expected_fft_v : cpx32_vec_t;
+    variable wrap_fft_v     : cpx32_vec_t;
+    variable edge_fft_v     : cpx32_vec_t;
+    variable edge_wrap_fft_v: cpx32_vec_t;
   begin
     rst_n <= '0';
     wait for 3 * C_CLK_PERIOD;
+    assert done_o = '0'
+      report "Code FFT generator done_o should remain low during reset"
+      severity failure;
     rst_n <= '1';
     wait until rising_edge(clk);
 
@@ -116,12 +122,12 @@ begin
 
     start <= '1';
     wait until rising_edge(clk);
-    start <= '0';
-    wait until rising_edge(clk);
-
+    wait for 1 ns;
     assert done_o = '1'
       report "Code FFT generator did not assert done"
       severity failure;
+    start <= '0';
+    wait until rising_edge(clk);
 
     for k in 0 to C_NFFT - 1 loop
       assert code_fft_o(k).re = expected_fft_v(k).re
@@ -131,6 +137,105 @@ begin
         report "Code FFT imag mismatch at bin " & integer'image(k)
         severity failure;
     end loop;
+
+    -- Boundary checks for code_start wrap behavior.
+    wrap_fft_v := fft_radix2(build_code_fft_input(prn_seq_v, 0), false);
+    edge_fft_v := fft_radix2(build_code_fft_input(prn_seq_v, 1022), false);
+    edge_wrap_fft_v := fft_radix2(build_code_fft_input(prn_seq_v, 1023), false);
+
+    code_start_i <= to_unsigned(0, code_start_i'length);
+    start <= '1';
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '1'
+      report "Code FFT generator did not assert done for code_start=0"
+      severity failure;
+    start <= '0';
+    wait until rising_edge(clk);
+    for k in 0 to C_NFFT - 1 loop
+      assert code_fft_o(k).re = wrap_fft_v(k).re
+        report "Code FFT mismatch for code_start=0 at bin " & integer'image(k)
+        severity failure;
+      assert code_fft_o(k).im = wrap_fft_v(k).im
+        report "Code FFT mismatch for code_start=0 at bin " & integer'image(k)
+        severity failure;
+    end loop;
+
+    code_start_i <= to_unsigned(1022, code_start_i'length);
+    start <= '1';
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '1'
+      report "Code FFT generator did not assert done for code_start=1022"
+      severity failure;
+    start <= '0';
+    wait until rising_edge(clk);
+    for k in 0 to C_NFFT - 1 loop
+      assert code_fft_o(k).re = edge_fft_v(k).re
+        report "Code FFT mismatch for code_start=1022 at bin " & integer'image(k)
+        severity failure;
+      assert code_fft_o(k).im = edge_fft_v(k).im
+        report "Code FFT mismatch for code_start=1022 at bin " & integer'image(k)
+        severity failure;
+    end loop;
+
+    code_start_i <= to_unsigned(1023, code_start_i'length);
+    start <= '1';
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '1'
+      report "Code FFT generator did not assert done for code_start=1023"
+      severity failure;
+    start <= '0';
+    wait until rising_edge(clk);
+    for k in 0 to C_NFFT - 1 loop
+      assert code_fft_o(k).re = edge_wrap_fft_v(k).re
+        report "Code FFT mismatch for code_start=1023 at bin " & integer'image(k)
+        severity failure;
+      assert code_fft_o(k).im = edge_wrap_fft_v(k).im
+        report "Code FFT mismatch for code_start=1023 at bin " & integer'image(k)
+        severity failure;
+    end loop;
+
+    for k in 0 to C_NFFT - 1 loop
+      assert edge_wrap_fft_v(k).re = wrap_fft_v(k).re and
+             edge_wrap_fft_v(k).im = wrap_fft_v(k).im
+        report "Expected code_start 1023 to wrap to code_start 0"
+        severity failure;
+    end loop;
+
+    -- Held start should keep done asserted while start is asserted.
+    code_start_i <= to_unsigned(17, code_start_i'length);
+    start <= '1';
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '1'
+      report "Code FFT generator expected done_o=1 on held-start cycle A"
+      severity failure;
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '1'
+      report "Code FFT generator expected done_o=1 on held-start cycle B"
+      severity failure;
+    start <= '0';
+    wait until rising_edge(clk);
+
+    -- Reset must dominate start and clear outputs.
+    start <= '1';
+    rst_n <= '0';
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '0'
+      report "Code FFT generator done_o must remain low during reset"
+      severity failure;
+    for k in 0 to C_NFFT - 1 loop
+      assert code_fft_o(k).re = to_signed(0, 32) and code_fft_o(k).im = to_signed(0, 32)
+        report "Code FFT generator output should clear during reset"
+        severity failure;
+    end loop;
+    start <= '0';
+    rst_n <= '1';
+    wait until rising_edge(clk);
 
     report "gps_l1_ca_acq_fft_code_gen_tb passed";
     wait;

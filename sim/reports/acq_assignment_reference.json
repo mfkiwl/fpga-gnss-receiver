@@ -2,9 +2,9 @@
   "rows": [
     {
       "channel": 0,
-      "code": 240,
+      "code": 432,
       "do_assign": 1,
-      "dopp_hz": -1250,
+      "dopp_hz": -1500,
       "hold_ms": 1,
       "max_ms": 8,
       "prn": 1
@@ -20,27 +20,27 @@
     },
     {
       "channel": 0,
-      "code": 112,
+      "code": 960,
       "do_assign": 1,
-      "dopp_hz": -500,
+      "dopp_hz": 0,
       "hold_ms": 1,
       "max_ms": 8,
       "prn": 32
     },
     {
       "channel": 0,
-      "code": 976,
+      "code": 848,
       "do_assign": 1,
-      "dopp_hz": -1500,
+      "dopp_hz": 500,
       "hold_ms": 1,
       "max_ms": 8,
       "prn": 17
     },
     {
       "channel": 0,
-      "code": 96,
+      "code": 80,
       "do_assign": 1,
-      "dopp_hz": 1000,
+      "dopp_hz": 500,
       "hold_ms": 1,
       "max_ms": 8,
       "prn": 11

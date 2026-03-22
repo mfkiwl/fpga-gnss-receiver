@@ -4,7 +4,7 @@
   "code_fft_np_vs_fixed_max_abs_delta_ratio": 0.0016177428188259573,
   "code_fft_np_vs_fixed_mean_abs_delta": 1495.75070873823,
   "code_fft_unique_bins": 2048,
-  "corr_case_count": 3,
+  "corr_case_count": 8,
   "first10": {
     "prn19_gnsstools": 923,
     "prn19_tb": 923,
@@ -13,5 +13,5 @@
     "prn7_gnsstools": 601,
     "prn7_tb": 601
   },
-  "mix_case_count": 3
+  "mix_case_count": 5
 }

@@ -92,6 +92,7 @@ required = {
     "run4_dopp_inversion",
     "run5_no_signal_a",
     "run6_no_signal_b",
+    "run7_no_signal_reject",
 }
 
 missing_td = sorted(required - td.keys())

@@ -582,6 +582,20 @@ def generate_acquisition_vectors(vectors_dir: Path, reports_dir: Path) -> None:
         cap_q2[idx] = pattern_q[idx]
     mix_cases.append({"dopp": 0, "cap_i": cap_i2, "cap_q": cap_q2})
 
+    cap_i3 = [0] * C_SAMPLES_PER_MS
+    cap_q3 = [0] * C_SAMPLES_PER_MS
+    for idx in range(64):
+        cap_i3[idx] = ((idx * 913) % 28001) - 14000
+        cap_q3[idx] = 12000 - ((idx * 733) % 24001)
+    mix_cases.append({"dopp": 9500, "cap_i": cap_i3, "cap_q": cap_q3})
+
+    cap_i4 = [0] * C_SAMPLES_PER_MS
+    cap_q4 = [0] * C_SAMPLES_PER_MS
+    for idx in range(128):
+        cap_i4[idx] = 32767 if (idx % 2) == 0 else -32768
+        cap_q4[idx] = -16384 if (idx % 4) < 2 else 16384
+    mix_cases.append({"dopp": -10000, "cap_i": cap_i4, "cap_q": cap_q4})
+
     with (vectors_dir / "acq_fft_mix_fft_cases.txt").open("w", encoding="utf-8") as f:
         f.write(f"{len(mix_cases)}\n")
         for case in mix_cases:
@@ -597,6 +611,11 @@ def generate_acquisition_vectors(vectors_dir: Path, reports_dir: Path) -> None:
         (4096, 0, 0, 2048, 2, 0, 0, 1),
         (12345, -6789, -111, 222, 3, -2, 4, 1),
         (-2500, 3200, 777, -1555, -3, 2, 5, -4),
+        (32767, -32768, -32768, 32767, 15, -11, -9, 7),
+        (250000, 125000, -400000, 300000, 6, 5, -4, 9),
+        (-900000, 450000, 700000, -200000, -8, 3, 2, -5),
+        (1, -1, -1, 1, 32767, 0, 0, -32768),
+        (0, 0, 0, 0, 123, -456, 789, -1011),
     ]
     with (vectors_dir / "acq_fft_corr_cases.txt").open("w", encoding="utf-8") as f:
         f.write(f"{len(corr_cases)}\n")

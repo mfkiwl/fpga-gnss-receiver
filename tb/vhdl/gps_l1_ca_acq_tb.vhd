@@ -188,11 +188,12 @@ begin
               " metric=" & integer'image(to_integer(result_metric)));
     end procedure;
 
-    procedure run_prn_case(
+    procedure run_prn_case_expect(
       prn_v            : in integer;
       thresh_v         : in unsigned(31 downto 0);
       case_name        : in string;
-      case_tag         : in string
+      case_tag         : in string;
+      expect_success   : in std_logic
     ) is
       variable seen_done_v   : boolean := false;
       variable read_status_v : file_open_status;
@@ -260,16 +261,35 @@ begin
       assert seen_done_v
         report case_name & ": acquisition did not finish."
         severity failure;
-      assert acq_success = '1'
-        report case_name & ": expected acquisition success."
-        severity failure;
-      assert result_valid = '1'
-        report case_name & ": expected result_valid."
-        severity failure;
-      assert to_integer(result_prn) = prn_v
-        report case_name & ": expected detected PRN to match configured PRN."
-        severity failure;
+      if expect_success = '1' then
+        assert acq_success = '1'
+          report case_name & ": expected acquisition success."
+          severity failure;
+        assert result_valid = '1'
+          report case_name & ": expected result_valid."
+          severity failure;
+        assert to_integer(result_prn) = prn_v
+          report case_name & ": expected detected PRN to match configured PRN."
+          severity failure;
+      else
+        assert acq_success = '0'
+          report case_name & ": expected acquisition failure."
+          severity failure;
+        assert result_valid = '0'
+          report case_name & ": expected result_valid=0 on failure."
+          severity failure;
+      end if;
       log_acq_tuple(case_tag);
+    end procedure;
+
+    procedure run_prn_case(
+      prn_v            : in integer;
+      thresh_v         : in unsigned(31 downto 0);
+      case_name        : in string;
+      case_tag         : in string
+    ) is
+    begin
+      run_prn_case_expect(prn_v, thresh_v, case_name, case_tag, '1');
     end procedure;
 
     procedure run_fullspace_prn_case(
@@ -449,6 +469,10 @@ begin
         report "Run6 no-signal reproducibility: tuple changed across repeated runs."
         severity failure;
 
+      -- Corner run: with no signal and non-zero threshold, acquisition must reject.
+      run_prn_case_expect(1, to_unsigned(1, detect_thresh'length),
+                          "Run7 no-signal reject", "run7_no_signal_reject", '0');
+
       -- Corner run: oversized bin config should complete (FFT mode exercises clipping path quickly).
       if G_DUT_ACQ_IMPL_FFT then
         doppler_min <= to_signed(0, doppler_min'length);
@@ -460,9 +484,9 @@ begin
         s_i <= to_signed(300, 16);
         s_q <= to_signed(50, 16);
         run_prn_case(1, to_unsigned(0, detect_thresh'length),
-                     "Run7 bin clipping corner", "run7_bin_clipping");
+                     "Run8 bin clipping corner", "run8_bin_clipping");
       else
-        log_msg("Skipping Run7 bin clipping corner in TD mode due runtime cost.");
+        log_msg("Skipping Run8 bin clipping corner in TD mode due runtime cost.");
       end if;
     end if;
 

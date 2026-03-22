@@ -50,9 +50,14 @@ begin
     variable expected_fft_v : cpx32_vec_t;
     variable cap_i_v        : sample_arr_t;
     variable cap_q_v        : sample_arr_t;
+    variable hold_fft_v     : cpx32_vec_t;
+    variable hold_mix_v     : cpx32_vec_t;
   begin
     rst_n <= '0';
     wait for 3 * C_CLK_PERIOD;
+    assert done_o = '0'
+      report "Mix FFT generator done_o should remain low during reset"
+      severity failure;
     rst_n <= '1';
     wait until rising_edge(clk);
 
@@ -94,12 +99,12 @@ begin
 
       start <= '1';
       wait until rising_edge(clk);
-      start <= '0';
-      wait until rising_edge(clk);
-
+      wait for 1 ns;
       assert done_o = '1'
         report "Mix FFT generator did not assert done"
         severity failure;
+      start <= '0';
+      wait until rising_edge(clk);
 
       for k in 0 to C_NFFT - 1 loop
         assert signal_fft_o(k).re = expected_fft_v(k).re
@@ -112,6 +117,60 @@ begin
           severity failure;
       end loop;
     end loop;
+
+    -- Held-start behavior should keep done asserted while start is high.
+    for s in 0 to C_SAMPLES_PER_MS - 1 loop
+      cap_i_v(s) := to_signed(0, 16);
+      cap_q_v(s) := to_signed(0, 16);
+    end loop;
+    cap_i_v(0) := to_signed(1000, 16);
+    cap_q_v(0) := to_signed(-500, 16);
+    cap_i_i <= cap_i_v;
+    cap_q_i <= cap_q_v;
+    dopp_hz_i <= to_signed(250, 16);
+    hold_mix_v := build_mixed_fft_input(cap_i_v, cap_q_v, to_signed(250, 16));
+    hold_fft_v := fft_radix2(hold_mix_v, false);
+    wait until rising_edge(clk);
+
+    start <= '1';
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '1'
+      report "Mix FFT generator expected done_o=1 on held-start cycle A"
+      severity failure;
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '1'
+      report "Mix FFT generator expected done_o=1 on held-start cycle B"
+      severity failure;
+    start <= '0';
+    wait until rising_edge(clk);
+
+    for k in 0 to C_NFFT - 1 loop
+      assert signal_fft_o(k).re = hold_fft_v(k).re
+        report "Held-start mix FFT real mismatch at bin " & integer'image(k)
+        severity failure;
+      assert signal_fft_o(k).im = hold_fft_v(k).im
+        report "Held-start mix FFT imag mismatch at bin " & integer'image(k)
+        severity failure;
+    end loop;
+
+    -- Reset must dominate start and clear outputs.
+    start <= '1';
+    rst_n <= '0';
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '0'
+      report "Mix FFT generator done_o must remain low during reset"
+      severity failure;
+    for k in 0 to C_NFFT - 1 loop
+      assert signal_fft_o(k).re = to_signed(0, 32) and signal_fft_o(k).im = to_signed(0, 32)
+        report "Mix FFT generator output should clear during reset"
+        severity failure;
+    end loop;
+    start <= '0';
+    rst_n <= '1';
+    wait until rising_edge(clk);
 
     file_close(vec_file);
 

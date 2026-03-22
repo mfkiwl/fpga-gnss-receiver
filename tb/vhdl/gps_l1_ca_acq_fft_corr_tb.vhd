@@ -51,9 +51,13 @@ begin
     variable exp_im_v      : integer;
     variable sig_v  : cpx32_vec_t;
     variable code_v : cpx32_vec_t;
+    variable hold_corr_v : cpx32_t;
   begin
     rst_n <= '0';
     wait for 3 * C_CLK_PERIOD;
+    assert done_o = '0'
+      report "Correlation unit done_o should remain low during reset"
+      severity failure;
     rst_n <= '1';
     wait until rising_edge(clk);
 
@@ -98,12 +102,12 @@ begin
 
       start <= '1';
       wait until rising_edge(clk);
-      start <= '0';
-      wait until rising_edge(clk);
-
+      wait for 1 ns;
       assert done_o = '1'
         report "Correlation unit did not assert done"
         severity failure;
+      start <= '0';
+      wait until rising_edge(clk);
 
       assert corr_o.re = to_signed(exp_re_v, 32)
         report "Correlation real mismatch at case " & integer'image(case_idx_v)
@@ -112,6 +116,54 @@ begin
         report "Correlation imag mismatch at case " & integer'image(case_idx_v)
         severity failure;
     end loop;
+
+    -- Held-start behavior should keep done asserted while start is high.
+    sig_v := (others => C_CPX_ZERO);
+    code_v := (others => C_CPX_ZERO);
+    sig_v(0).re := to_signed(100, 32);
+    sig_v(0).im := to_signed(-50, 32);
+    sig_v(1).re := to_signed(20, 32);
+    sig_v(1).im := to_signed(10, 32);
+    code_v(0).re := to_signed(3, 32);
+    code_v(0).im := to_signed(1, 32);
+    code_v(1).re := to_signed(-2, 32);
+    code_v(1).im := to_signed(4, 32);
+    hold_corr_v := corr0_from_spectra(sig_v, code_v);
+
+    sig_fft_i <= sig_v;
+    code_fft_i <= code_v;
+    wait until rising_edge(clk);
+    start <= '1';
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '1'
+      report "Correlation unit expected done_o=1 on held-start cycle A"
+      severity failure;
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '1'
+      report "Correlation unit expected done_o=1 on held-start cycle B"
+      severity failure;
+    start <= '0';
+    wait until rising_edge(clk);
+    assert corr_o.re = hold_corr_v.re and corr_o.im = hold_corr_v.im
+      report "Correlation unit held-start output mismatch"
+      severity failure;
+
+    -- Reset must dominate start and clear output.
+    start <= '1';
+    rst_n <= '0';
+    wait until rising_edge(clk);
+    wait for 1 ns;
+    assert done_o = '0'
+      report "Correlation unit done_o must remain low during reset"
+      severity failure;
+    assert corr_o.re = to_signed(0, 32) and corr_o.im = to_signed(0, 32)
+      report "Correlation unit output should clear during reset"
+      severity failure;
+    start <= '0';
+    rst_n <= '1';
+    wait until rising_edge(clk);
 
     file_close(vec_file);
 

@@ -82,6 +82,32 @@ begin
     variable exp_code_v : integer;
     variable exp_metric_v : integer;
     variable seen_done_v : boolean := false;
+    procedure pulse_start is
+    begin
+      start_pulse <= '1';
+      wait until rising_edge(clk);
+      start_pulse <= '0';
+    end procedure;
+
+    procedure run_constant_input_until_done(
+      i_samp_v : in signed(15 downto 0);
+      q_samp_v : in signed(15 downto 0);
+      timeout_cycles_v : in integer
+    ) is
+    begin
+      seen_done_v := false;
+      for i in 0 to timeout_cycles_v loop
+        s_valid <= '1';
+        s_i <= i_samp_v;
+        s_q <= q_samp_v;
+        wait until rising_edge(clk);
+        if acq_done = '1' then
+          seen_done_v := true;
+          exit;
+        end if;
+      end loop;
+      s_valid <= '0';
+    end procedure;
   begin
     rst_n <= '0';
     core_en <= '0';
@@ -101,20 +127,8 @@ begin
     file_close(exp_file);
 
     core_en <= '1';
-    start_pulse <= '1';
-    wait until rising_edge(clk);
-    start_pulse <= '0';
-
-    for i in 0 to C_SAMPLES_PER_MS + 1024 loop
-      s_valid <= '1';
-      s_i <= (others => '0');
-      s_q <= (others => '0');
-      wait until rising_edge(clk);
-      if acq_done = '1' then
-        seen_done_v := true;
-        exit;
-      end if;
-    end loop;
+    pulse_start;
+    run_constant_input_until_done(to_signed(0, 16), to_signed(0, 16), C_SAMPLES_PER_MS * 8);
 
     assert seen_done_v
       report "FFT block did not complete acquisition"
@@ -136,6 +150,70 @@ begin
       severity failure;
     assert to_integer(result_metric) = exp_metric_v
       report "FFT block returned unexpected metric"
+      severity failure;
+    wait until rising_edge(clk);
+    assert acq_done = '0'
+      report "FFT block acq_done should pulse for one cycle"
+      severity failure;
+
+    -- Multi-bin deterministic tie case with zero input:
+    -- tie-break should choose the final searched bin.
+    prn_start <= to_unsigned(1, 6);
+    prn_stop <= to_unsigned(1, 6);
+    doppler_min <= to_signed(-250, 16);
+    doppler_max <= to_signed(250, 16);
+    doppler_step <= to_signed(250, 16);
+    doppler_bin_count_i <= to_unsigned(3, doppler_bin_count_i'length);
+    code_bin_count_i <= to_unsigned(4, code_bin_count_i'length);
+    code_bin_step_i <= to_unsigned(16, code_bin_step_i'length);
+    detect_thresh <= to_unsigned(0, detect_thresh'length);
+
+    pulse_start;
+    run_constant_input_until_done(to_signed(0, 16), to_signed(0, 16), C_SAMPLES_PER_MS * 12);
+
+    assert seen_done_v
+      report "FFT multi-bin case did not complete acquisition"
+      severity failure;
+    assert acq_success = '1'
+      report "FFT multi-bin case expected success with zero threshold"
+      severity failure;
+    assert result_valid = '1'
+      report "FFT multi-bin case expected result_valid=1"
+      severity failure;
+    assert to_integer(result_prn) = 1
+      report "FFT multi-bin case expected PRN=1"
+      severity failure;
+    assert to_integer(result_dopp) = 250
+      report "FFT multi-bin case expected tie-break Doppler=250"
+      severity failure;
+    assert to_integer(result_code) = 48
+      report "FFT multi-bin case expected tie-break code=48"
+      severity failure;
+    assert to_integer(result_metric) = 0
+      report "FFT multi-bin case expected zero metric"
+      severity failure;
+    wait until rising_edge(clk);
+    assert acq_done = '0'
+      report "FFT multi-bin case acq_done should pulse for one cycle"
+      severity failure;
+
+    -- Explicit fail path: no signal with non-zero threshold must reject.
+    detect_thresh <= to_unsigned(1, detect_thresh'length);
+    pulse_start;
+    run_constant_input_until_done(to_signed(0, 16), to_signed(0, 16), C_SAMPLES_PER_MS * 12);
+
+    assert seen_done_v
+      report "FFT threshold-reject case did not complete acquisition"
+      severity failure;
+    assert acq_success = '0'
+      report "FFT threshold-reject case expected acq_success=0"
+      severity failure;
+    assert result_valid = '0'
+      report "FFT threshold-reject case expected result_valid=0"
+      severity failure;
+    wait until rising_edge(clk);
+    assert acq_done = '0'
+      report "FFT threshold-reject case acq_done should pulse for one cycle"
       severity failure;
 
     report "gps_l1_ca_acq_fft_tb passed";

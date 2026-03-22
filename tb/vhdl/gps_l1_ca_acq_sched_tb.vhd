@@ -190,6 +190,89 @@ begin
     assert assign_valid_o = '1' report "Expected replacement for unlocked weak channel." severity failure;
     assert to_integer(assign_ch_idx_o) = 0 report "Expected unlocked channel 0 to be replaced first." severity failure;
 
+    -- Next PRN should be 6, but failed acquisition must not assign any channel.
+    seen_start := false;
+    for i in 0 to 10 loop
+      wait until rising_edge(clk);
+      if acq_start_pulse_o = '1' then
+        seen_start := true;
+        exit;
+      end if;
+    end loop;
+    assert seen_start report "Scheduler did not continue after replacement." severity failure;
+    assert to_integer(acq_prn_start_o) = 6 report "Expected PRN attempt to advance to 6." severity failure;
+
+    acq_result_prn_i <= to_unsigned(6, 6);
+    acq_result_metric_i <= to_unsigned(200, 32);
+    acq_success_i <= '0';
+    acq_done_i <= '1';
+    wait until rising_edge(clk);
+    acq_done_i <= '0';
+    wait for 1 ns;
+    assert assign_valid_o = '0' report "Failed acquisition should not trigger assignment." severity failure;
+
+    -- Unlocked channel replacement requires strictly better metric.
+    chan_alloc_i <= "11";
+    chan_lock_i <= "10";
+
+    seen_start := false;
+    for i in 0 to 10 loop
+      wait until rising_edge(clk);
+      if acq_start_pulse_o = '1' then
+        seen_start := true;
+        exit;
+      end if;
+    end loop;
+    assert seen_start report "Scheduler did not issue start before weaker-metric test." severity failure;
+    acq_result_prn_i <= to_unsigned(7, 6);
+    acq_result_metric_i <= to_unsigned(99, 32); -- weaker than channel 0 metric 100
+    acq_success_i <= '1';
+    acq_done_i <= '1';
+    wait until rising_edge(clk);
+    acq_done_i <= '0';
+    acq_success_i <= '0';
+    wait for 1 ns;
+    assert assign_valid_o = '0' report "Unlocked channel should not be replaced by weaker metric." severity failure;
+
+    seen_start := false;
+    for i in 0 to 10 loop
+      wait until rising_edge(clk);
+      if acq_start_pulse_o = '1' then
+        seen_start := true;
+        exit;
+      end if;
+    end loop;
+    assert seen_start report "Scheduler did not issue start before equal-metric test." severity failure;
+    acq_result_prn_i <= to_unsigned(5, 6);
+    acq_result_metric_i <= to_unsigned(100, 32); -- equal metric, should not replace
+    acq_success_i <= '1';
+    acq_done_i <= '1';
+    wait until rising_edge(clk);
+    acq_done_i <= '0';
+    acq_success_i <= '0';
+    wait for 1 ns;
+    assert assign_valid_o = '0' report "Unlocked channel should not be replaced by equal metric." severity failure;
+
+    seen_start := false;
+    for i in 0 to 10 loop
+      wait until rising_edge(clk);
+      if acq_start_pulse_o = '1' then
+        seen_start := true;
+        exit;
+      end if;
+    end loop;
+    assert seen_start report "Scheduler did not issue start before stronger-metric test." severity failure;
+    acq_result_prn_i <= to_unsigned(6, 6);
+    acq_result_metric_i <= to_unsigned(101, 32); -- stronger than current 100
+    acq_success_i <= '1';
+    acq_done_i <= '1';
+    wait until rising_edge(clk);
+    acq_done_i <= '0';
+    acq_success_i <= '0';
+    wait for 1 ns;
+    assert assign_valid_o = '1' report "Expected replacement when unlocked channel metric improves." severity failure;
+    assert to_integer(assign_ch_idx_o) = 0 report "Expected stronger metric replacement to target channel 0." severity failure;
+
     log_msg("gps_l1_ca_acq_sched_tb completed");
     wait;
   end process;
