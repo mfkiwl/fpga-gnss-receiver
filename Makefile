@@ -8,8 +8,26 @@ GNSS_DATA_SRC := $(GNSS_DATA_DIR)/$(GNSS_DATA_FILE)
 GNSS_DATA_DECIMATED_FILE := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat
 GNSS_DATA_DECIMATED_SRC := $(GNSS_DATA_DIR)/$(GNSS_DATA_DECIMATED_FILE)
 GNSS_TB_INPUT_FILE := $(GNSS_DATA_DECIMATED_SRC)
+UNIT_TBS := \
+	gps_l1_ca_gain_ctrl_tb \
+	gps_l1_ca_acq_sched_tb \
+	gps_l1_ca_acq_fft_prn_gen_tb \
+	gps_l1_ca_acq_fft_code_gen_tb \
+	gps_l1_ca_acq_fft_mix_fft_tb \
+	gps_l1_ca_acq_fft_corr_tb \
+	gps_l1_ca_acq_fft_tb \
+	gps_l1_ca_track_discriminators_tb \
+	gps_l1_ca_track_loop_filters_tb \
+	gps_l1_ca_track_power_lock_tb \
+	gps_l1_ca_track_lock_state_tb \
+	gps_l1_ca_acq_tb \
+	gps_l1_ca_chan_bank_tb \
+	gps_l1_ca_chan_bank_nav_store_tb \
+	gps_l1_ca_nav_store_tb \
+	gps_l1_ca_observables_tb \
+	gps_l1_ca_pvt_tb
 
-.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-chan-bank sim-chan-bank-nav-store sim-acq-file sim-acq-equiv sim-gnss-dsp sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
+.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-unit-% sim-chan-bank sim-chan-bank-nav-store sim-acq-file sim-acq-equiv sim-gnss-dsp sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
 
 help:
 	@echo "Targets:"
@@ -18,6 +36,7 @@ help:
 	@echo "  make sim-smoke    - Run smoke simulations"
 	@echo "                     Set NVC_ENABLE_WAVE=0 to disable wave dump"
 	@echo "  make sim-unit     - Run unit-level VHDL testbenches"
+	@echo "  make sim-unit-<tb_name> - Run one unit TB (e.g. sim-unit-gps_l1_ca_gain_ctrl_tb)"
 	@echo "  make sim-chan-bank - Run gps_l1_ca_chan_bank_tb"
 	@echo "  make sim-chan-bank-nav-store - Run gps_l1_ca_chan_bank_nav_store_tb"
 	@echo "  make sim-acq-file - Run gps_l1_ca_acq_tb with GNSS stimulus file replay"
@@ -68,6 +87,9 @@ sim-smoke:
 
 sim-unit:
 	@./sim/run_unit_tbs.sh
+
+sim-unit-%:
+	@./sim/run_unit_tbs.sh "$*"
 
 sim-chan-bank:
 	@./lint/lint_vhdl.sh

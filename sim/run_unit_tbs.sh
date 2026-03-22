@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u -o pipefail
 
-UNIT_TBS=(
+ALL_UNIT_TBS=(
   gps_l1_ca_gain_ctrl_tb
   gps_l1_ca_acq_sched_tb
   gps_l1_ca_acq_fft_prn_gen_tb
@@ -20,6 +20,32 @@ UNIT_TBS=(
   gps_l1_ca_observables_tb
   gps_l1_ca_pvt_tb
 )
+
+if [[ $# -gt 0 ]]; then
+  UNIT_TBS=("$@")
+else
+  UNIT_TBS=("${ALL_UNIT_TBS[@]}")
+fi
+
+is_known_tb() {
+  local candidate="$1"
+  local tb
+  for tb in "${ALL_UNIT_TBS[@]}"; do
+    if [[ "${candidate}" == "${tb}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+for tb in "${UNIT_TBS[@]}"; do
+  if ! is_known_tb "${tb}"; then
+    echo "error: unknown unit TB '${tb}'."
+    echo "Known unit TBs:"
+    printf '  %s\n' "${ALL_UNIT_TBS[@]}"
+    exit 1
+  fi
+done
 
 UNIT_TB_STOP_TIME="${UNIT_TB_STOP_TIME:-3ms}"
 NVC_STDERR_LEVEL="${NVC_STDERR_LEVEL:-none}"
@@ -48,6 +74,7 @@ fi
 echo "==> Running VHDL unit testbenches"
 echo "    stop-time: ${UNIT_TB_STOP_TIME}"
 echo "    stderr level: ${NVC_STDERR_LEVEL}"
+echo "    selected TBs: ${UNIT_TBS[*]}"
 
 pass_count=0
 fail_count=0
