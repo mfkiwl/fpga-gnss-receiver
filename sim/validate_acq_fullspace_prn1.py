@@ -158,7 +158,7 @@ def build_prn_sequence(prn: int) -> List[int]:
 
     for chip in range(1023):
         g1_out = g1[9]
-        g2_out = g2[10 - ta] ^ g2[10 - tb]
+        g2_out = g2[ta - 1] ^ g2[tb - 1]
         seq[chip] = g1_out ^ g2_out
 
         fb1 = g1[2] ^ g1[9]

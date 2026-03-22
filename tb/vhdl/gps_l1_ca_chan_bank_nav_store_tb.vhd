@@ -280,7 +280,7 @@ begin
 
       for chip in 0 to 1022 loop
         g1_out := g1(9);
-        g2_out := g2(10 - ta) xor g2(10 - tb);
+        g2_out := g2(ta - 1) xor g2(tb - 1);
         seq_v(chip) := g1_out xor g2_out;
 
         fb1 := g1(2) xor g1(9);

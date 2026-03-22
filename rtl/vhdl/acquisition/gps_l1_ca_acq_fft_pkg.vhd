@@ -220,7 +220,7 @@ package body gps_l1_ca_acq_fft_pkg is
 
     for chip in 0 to 1022 loop
       g1_out := g1(9);
-      g2_out := g2(10 - ta) xor g2(10 - tb);
+      g2_out := g2(ta - 1) xor g2(tb - 1);
       seq_v(chip) := g1_out xor g2_out;
 
       fb1 := g1(2) xor g1(9);
@@ -396,9 +396,9 @@ package body gps_l1_ca_acq_fft_pkg is
 
     for s in 0 to C_SAMPLES_PER_MS - 1 loop
       if prn_seq(chip_idx) = '1' then
-        out_v(s).re := to_signed(-1, 32);
+        out_v(s).re := to_signed(-32767, 32);
       else
-        out_v(s).re := to_signed(1, 32);
+        out_v(s).re := to_signed(32767, 32);
       end if;
       out_v(s).im := (others => '0');
 

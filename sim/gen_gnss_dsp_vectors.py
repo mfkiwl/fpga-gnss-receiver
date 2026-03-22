@@ -213,7 +213,9 @@ def build_code_fft_input(prn_bits: Sequence[int], code_start: int) -> List[Tuple
     chip_idx = code_start % 1023
     code_nco = wrap_u32(chip_idx << 21)
     for s in range(C_SAMPLES_PER_MS):
-        out[s] = (-1, 0) if prn_bits[chip_idx] else (1, 0)
+        # Keep local-code samples in Q15 range so subsequent Q15 FFT twiddle
+        # multiplies preserve dynamic range instead of collapsing to zeros.
+        out[s] = (-32767, 0) if prn_bits[chip_idx] else (32767, 0)
         next_code = wrap_u32(code_nco + C_CODE_NCO_FCW)
         if next_code < code_nco:
             chip_idx = 0 if chip_idx == 1022 else chip_idx + 1
@@ -526,9 +528,22 @@ def generate_acquisition_vectors(vectors_dir: Path, reports_dir: Path) -> None:
             r_v = (r_v * 2) + (1 if bits_v[i] else 0)
         return r_v
 
+    def gnsstools_bits(prn_v: int) -> List[int]:
+        return [1 if bool(v) else 0 for v in ca.ca_code(prn_v)]
+
     prn1 = build_prn_bits(1)
     prn7 = build_prn_bits(7)
     prn19 = build_prn_bits(19)
+    prn1_gns = gnsstools_bits(1)
+    prn7_gns = gnsstools_bits(7)
+    prn19_gns = gnsstools_bits(19)
+
+    if prn1 != prn1_gns or prn7 != prn7_gns or prn19 != prn19_gns:
+        raise ValueError(
+            "PRN convention mismatch between RTL/reference generator and gnsstools "
+            "(PRN1/7/19 sequence disagreement)."
+        )
+
     write_int_lines(vectors_dir / "acq_fft_prn_prn1.txt", prn1)
     write_int_lines(vectors_dir / "acq_fft_prn_prn7.txt", prn7)
     write_int_lines(vectors_dir / "acq_fft_prn_prn19.txt", prn19)
@@ -605,18 +620,43 @@ def generate_acquisition_vectors(vectors_dir: Path, reports_dir: Path) -> None:
     code_np[:C_SAMPLES_PER_MS] = np.array([v[0] + 1j * v[1] for v in code_input[:C_SAMPLES_PER_MS]], dtype=np.complex128)
     code_np_fft = np.fft.fft(code_np)
     abs_delta = np.abs(np.array([complex(*v) for v in code_fft]) - code_np_fft)
+    max_abs_delta = float(np.max(abs_delta))
+    mean_abs_delta = float(np.mean(abs_delta))
+    max_fft_mag = float(np.max(np.abs(code_np_fft)))
+    max_abs_delta_ratio = max_abs_delta / max(1.0, max_fft_mag)
+    unique_bins = len(set(code_fft))
+    nonzero_bins = sum(1 for re_v, im_v in code_fft if re_v != 0 or im_v != 0)
+
+    # Guardrails to catch accidental fixed-point degeneracy in vector generation.
+    if unique_bins <= 8:
+        raise ValueError(
+            f"Code FFT vector degeneracy detected: only {unique_bins} unique bins."
+        )
+    if nonzero_bins < (C_NFFT // 8):
+        raise ValueError(
+            f"Code FFT vector degeneracy detected: only {nonzero_bins} non-zero bins."
+        )
+    if max_abs_delta_ratio > 0.30:
+        raise ValueError(
+            "Fixed-point FFT diverges from independent NumPy FFT beyond tolerance: "
+            f"ratio={max_abs_delta_ratio:.4f}"
+        )
+
     summary = {
-        "code_fft_np_vs_fixed_max_abs_delta": float(np.max(abs_delta)),
-        "code_fft_np_vs_fixed_mean_abs_delta": float(np.mean(abs_delta)),
+        "code_fft_np_vs_fixed_max_abs_delta": max_abs_delta,
+        "code_fft_np_vs_fixed_mean_abs_delta": mean_abs_delta,
+        "code_fft_np_vs_fixed_max_abs_delta_ratio": max_abs_delta_ratio,
+        "code_fft_unique_bins": unique_bins,
+        "code_fft_nonzero_bins": nonzero_bins,
         "mix_case_count": len(mix_cases),
         "corr_case_count": len(corr_cases),
         "first10": {
             "prn1_tb": first10(prn1),
             "prn7_tb": first10(prn7),
             "prn19_tb": first10(prn19),
-            "prn1_gnsstools": int(ca.first_10_chips(1)),
-            "prn7_gnsstools": int(ca.first_10_chips(7)),
-            "prn19_gnsstools": int(ca.first_10_chips(19)),
+            "prn1_gnsstools": first10(prn1_gns),
+            "prn7_gnsstools": first10(prn7_gns),
+            "prn19_gnsstools": first10(prn19_gns),
         },
     }
     with (reports_dir / "acq_subblock_summary.json").open("w", encoding="utf-8") as f:
