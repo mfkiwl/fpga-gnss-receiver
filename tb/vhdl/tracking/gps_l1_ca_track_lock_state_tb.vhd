@@ -1,11 +1,15 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use std.textio.all;
 use std.env.all;
 use work.gps_l1_ca_pkg.all;
 use work.gps_l1_ca_track_pkg.all;
 
 entity gps_l1_ca_track_lock_state_tb is
+  generic (
+    G_VECTOR_FILE : string := "sim/vectors/track_lock_state_vectors.txt"
+  );
 end entity;
 
 architecture tb of gps_l1_ca_track_lock_state_tb is
@@ -44,38 +48,111 @@ begin
     );
 
   stim : process
+    file vec_file              : text;
+    variable read_status_v     : file_open_status;
+    variable l_v               : line;
+    variable case_count_v      : integer;
+    variable state_v           : integer;
+    variable prompt_mag_v      : integer;
+    variable cn0_v             : integer;
+    variable min_cn0_v         : integer;
+    variable dll_err_v         : integer;
+    variable carrier_metric_v  : integer;
+    variable carrier_err_v     : integer;
+    variable carrier_lock_th_v : integer;
+    variable max_lock_fail_v   : integer;
+    variable lock_score_v      : integer;
+    variable exp_state_v       : integer;
+    variable exp_code_lock_v   : integer;
+    variable exp_carrier_lock_v: integer;
+    variable exp_lock_score_v  : integer;
   begin
-    -- Enter locked from pull-in.
-    state_s <= TRACK_PULLIN;
-    prompt_mag_s <= 10000;
-    cn0_dbhz_s <= 45;
-    min_cn0_dbhz_s <= to_unsigned(20, 8);
-    dll_err_q15_s <= 100;
-    carrier_metric_s <= 22000;
-    carrier_err_q15_s <= 100;
-    carrier_lock_th_s <= to_signed(16384, 16);
-    max_lock_fail_s <= to_unsigned(20, 8);
-    lock_score_s <= 20;
-    wait for 1 ns;
+    file_open(read_status_v, vec_file, G_VECTOR_FILE, read_mode);
+    assert read_status_v = open_ok
+      report "Unable to open lock-state vector file: " & G_VECTOR_FILE
+      severity failure;
 
-    assert state_o_s = TRACK_LOCKED severity failure;
-    assert code_lock_o_s = '1' severity failure;
-    assert carrier_lock_o_s = '1' severity failure;
-    assert lock_score_o_s > lock_score_s severity failure;
+    readline(vec_file, l_v);
+    read(l_v, case_count_v);
+    assert case_count_v > 0
+      report "Expected at least one lock-state vector row."
+      severity failure;
 
-    -- Fall back to pull-in when score decays below exit threshold.
-    state_s <= TRACK_LOCKED;
-    prompt_mag_s <= 0;
-    cn0_dbhz_s <= 0;
-    dll_err_q15_s <= 32000;
-    carrier_metric_s <= 0;
-    carrier_err_q15_s <= 30000;
-    lock_score_s <= 2;
-    wait for 1 ns;
+    for case_idx_v in 0 to case_count_v - 1 loop
+      readline(vec_file, l_v);
+      read(l_v, state_v);
+      read(l_v, prompt_mag_v);
+      read(l_v, cn0_v);
+      read(l_v, min_cn0_v);
+      read(l_v, dll_err_v);
+      read(l_v, carrier_metric_v);
+      read(l_v, carrier_err_v);
+      read(l_v, carrier_lock_th_v);
+      read(l_v, max_lock_fail_v);
+      read(l_v, lock_score_v);
+      read(l_v, exp_state_v);
+      read(l_v, exp_code_lock_v);
+      read(l_v, exp_carrier_lock_v);
+      read(l_v, exp_lock_score_v);
 
-    assert state_o_s = TRACK_PULLIN severity failure;
-    assert code_lock_o_s = '0' severity failure;
-    assert carrier_lock_o_s = '0' severity failure;
+      if state_v = 2 then
+        state_s <= TRACK_LOCKED;
+      elsif state_v = 0 then
+        state_s <= TRACK_IDLE;
+      else
+        state_s <= TRACK_PULLIN;
+      end if;
+
+      prompt_mag_s <= prompt_mag_v;
+      cn0_dbhz_s <= cn0_v;
+      min_cn0_dbhz_s <= to_unsigned(min_cn0_v, min_cn0_dbhz_s'length);
+      dll_err_q15_s <= dll_err_v;
+      carrier_metric_s <= carrier_metric_v;
+      carrier_err_q15_s <= carrier_err_v;
+      carrier_lock_th_s <= to_signed(carrier_lock_th_v, carrier_lock_th_s'length);
+      max_lock_fail_s <= to_unsigned(max_lock_fail_v, max_lock_fail_s'length);
+      lock_score_s <= lock_score_v;
+      wait for 1 ns;
+
+      if exp_state_v = 2 then
+        assert state_o_s = TRACK_LOCKED
+          report "state mismatch at lock-state case " & integer'image(case_idx_v)
+          severity failure;
+      elsif exp_state_v = 0 then
+        assert state_o_s = TRACK_IDLE
+          report "state mismatch at lock-state case " & integer'image(case_idx_v)
+          severity failure;
+      else
+        assert state_o_s = TRACK_PULLIN
+          report "state mismatch at lock-state case " & integer'image(case_idx_v)
+          severity failure;
+      end if;
+
+      if exp_code_lock_v /= 0 then
+        assert code_lock_o_s = '1'
+          report "code_lock mismatch at lock-state case " & integer'image(case_idx_v)
+          severity failure;
+      else
+        assert code_lock_o_s = '0'
+          report "code_lock mismatch at lock-state case " & integer'image(case_idx_v)
+          severity failure;
+      end if;
+
+      if exp_carrier_lock_v /= 0 then
+        assert carrier_lock_o_s = '1'
+          report "carrier_lock mismatch at lock-state case " & integer'image(case_idx_v)
+          severity failure;
+      else
+        assert carrier_lock_o_s = '0'
+          report "carrier_lock mismatch at lock-state case " & integer'image(case_idx_v)
+          severity failure;
+      end if;
+      assert lock_score_o_s = exp_lock_score_v
+        report "lock_score mismatch at lock-state case " & integer'image(case_idx_v)
+        severity failure;
+    end loop;
+
+    file_close(vec_file);
 
     finish;
   end process;

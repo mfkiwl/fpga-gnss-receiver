@@ -1,0 +1,14 @@
+{
+  "code_fft_np_vs_fixed_max_abs_delta": 155.7109559774591,
+  "code_fft_np_vs_fixed_mean_abs_delta": 36.00992337866824,
+  "corr_case_count": 3,
+  "first10": {
+    "prn19_gnsstools": 923,
+    "prn19_tb": 998,
+    "prn1_gnsstools": 800,
+    "prn1_tb": 996,
+    "prn7_gnsstools": 601,
+    "prn7_tb": 918
+  },
+  "mix_case_count": 3
+}

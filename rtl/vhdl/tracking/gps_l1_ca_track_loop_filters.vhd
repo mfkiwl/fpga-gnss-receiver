@@ -30,6 +30,11 @@ end entity;
 architecture rtl of gps_l1_ca_track_loop_filters is
 begin
   process (all)
+    variable dll_err_use_v        : integer;
+    variable carrier_err_pll_use_v: integer;
+    variable carrier_err_fll_use_v: integer;
+    variable code_loop_i_in_v     : integer;
+    variable carr_loop_i_in_v     : integer;
     variable code_kp_v           : integer;
     variable code_ki_v           : integer;
     variable code_int_v          : integer;
@@ -49,6 +54,12 @@ begin
     variable dll_bw_sel_v        : integer;
     variable dopp_v              : integer;
   begin
+    dll_err_use_v := clamp_i(dll_err_q15_i, -32767, 32767);
+    carrier_err_pll_use_v := clamp_i(carrier_err_pll_q15_i, -C_PHASE_ERR_MAX_Q15, C_PHASE_ERR_MAX_Q15);
+    carrier_err_fll_use_v := clamp_i(carrier_err_fll_q15_i, -C_PHASE_ERR_MAX_Q15, C_PHASE_ERR_MAX_Q15);
+    code_loop_i_in_v := clamp_i(to_integer(code_loop_i_i), -to_integer(C_CODE_FCW_DELTA_MAX), to_integer(C_CODE_FCW_DELTA_MAX));
+    carr_loop_i_in_v := clamp_i(to_integer(carr_loop_i_i), -C_CARR_FCW_DELTA_MAX, C_CARR_FCW_DELTA_MAX);
+
     if state_i = TRACK_LOCKED then
       pll_bw_sel_v := to_integer(pll_bw_narrow_hz_i);
       dll_bw_sel_v := to_integer(dll_bw_narrow_hz_i);
@@ -73,9 +84,9 @@ begin
       code_ki_v := 1;
     end if;
 
-    code_int_v := to_integer(code_loop_i_i) + ((dll_err_q15_i * code_ki_v) / 32768);
+    code_int_v := code_loop_i_in_v + ((dll_err_use_v * code_ki_v) / 32768);
     code_int_v := clamp_i(code_int_v, -to_integer(C_CODE_FCW_DELTA_MAX), to_integer(C_CODE_FCW_DELTA_MAX));
-    code_prop_v := (dll_err_q15_i * code_kp_v) / 32768;
+    code_prop_v := (dll_err_use_v * code_kp_v) / 32768;
     code_delta_v := clamp_i(code_int_v + code_prop_v, -to_integer(C_CODE_FCW_DELTA_MAX), to_integer(C_CODE_FCW_DELTA_MAX));
 
     if code_delta_v >= 0 then
@@ -94,10 +105,10 @@ begin
         carr_ki_v := 1;
       end if;
 
-      carr_int_v := to_integer(carr_loop_i_i) + ((carrier_err_pll_q15_i * carr_ki_v) / 32768);
+      carr_int_v := carr_loop_i_in_v + ((carrier_err_pll_use_v * carr_ki_v) / 32768);
       carr_int_v := clamp_i(carr_int_v, -C_CARR_FCW_DELTA_MAX, C_CARR_FCW_DELTA_MAX);
 
-      carr_prop_v := (carrier_err_pll_q15_i * carr_kp_v) / 32768;
+      carr_prop_v := (carrier_err_pll_use_v * carr_kp_v) / 32768;
       carr_max_step_v := carr_fcw_from_hz_i(to_integer(dopp_step_lock_i));
       if carr_max_step_v < 1 then
         carr_max_step_v := 1;
@@ -115,18 +126,18 @@ begin
         carr_kp_v := 1;
       end if;
 
-      fll_step_v := (carrier_err_fll_q15_i * carr_kp_v) / 32768;
+      fll_step_v := (carrier_err_fll_use_v * carr_kp_v) / 32768;
       carr_max_step_v := carr_fcw_from_hz_i(to_integer(dopp_step_pullin_i));
       if carr_max_step_v < 1 then
         carr_max_step_v := 1;
       end if;
       fll_step_v := clamp_i(fll_step_v, -carr_max_step_v, carr_max_step_v);
 
-      pll_assist_step_v := (carrier_err_pll_q15_i * carr_kp_v) / 32768;
+      pll_assist_step_v := (carrier_err_pll_use_v * carr_kp_v) / 32768;
       pll_assist_step_v := pll_assist_step_v / C_PULLIN_PLL_ASSIST_DIV;
       pll_assist_step_v := clamp_i(pll_assist_step_v, -carr_max_step_v, carr_max_step_v);
 
-      carr_cmd_v := to_integer(carr_loop_i_i) + fll_step_v + pll_assist_step_v;
+      carr_cmd_v := carr_loop_i_in_v + fll_step_v + pll_assist_step_v;
       carr_cmd_v := clamp_i(carr_cmd_v, -C_CARR_FCW_DELTA_MAX, C_CARR_FCW_DELTA_MAX);
       carr_int_v := carr_cmd_v;
     end if;

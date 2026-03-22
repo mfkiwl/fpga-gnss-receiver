@@ -1,0 +1,14 @@
+{
+  "derive_assignments": true,
+  "generated_utc": "2026-03-21T14:57:58.402063+00:00",
+  "gnss_dsp_tools_commit": "17c664b",
+  "input_capture": {
+    "exists": true,
+    "path": "/home/rigo/test/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat",
+    "size_bytes": 800000000
+  },
+  "main_repo_commit": "09b1783",
+  "profile": "regress",
+  "reports_dir": "/home/rigo/test/sim/reports",
+  "vectors_dir": "/home/rigo/test/sim/vectors"
+}

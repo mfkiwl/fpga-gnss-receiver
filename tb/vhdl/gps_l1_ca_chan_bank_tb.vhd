@@ -1,6 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use std.textio.all;
 use std.env.all;
 use work.gps_l1_ca_pkg.all;
 use work.gps_l1_ca_nco_pkg.all;
@@ -12,7 +13,8 @@ entity gps_l1_ca_chan_bank_tb is
     G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat";
     G_FILE_SAMPLE_RATE_SPS: integer := 2000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
-    G_MAX_FILE_SAMPLES    : integer := 3000000
+    G_MAX_FILE_SAMPLES    : integer := 3000000;
+    G_ASSIGN_FILE         : string  := "sim/vectors/chan_bank_assignments.txt"
   );
 end entity;
 
@@ -511,6 +513,18 @@ begin
         report case_name & ": expected C/N0 estimate above configured minimum."
         severity failure;
     end procedure;
+
+    file assign_file               : text;
+    variable assign_status_v       : file_open_status;
+    variable assign_line_v         : line;
+    variable assign_case_count_v   : integer := 0;
+    variable assign_ch_v           : integer := 0;
+    variable assign_prn_v          : integer := 0;
+    variable assign_dopp_v         : integer := 0;
+    variable assign_code_v         : integer := 0;
+    variable assign_max_ms_v       : integer := 0;
+    variable assign_hold_ms_v      : integer := 0;
+    variable assign_do_assign_v    : integer := 0;
   begin
     rst_n <= '0';
     for i in 0 to 3 loop
@@ -534,13 +548,46 @@ begin
 
     assert chan_alloc_o = "00" report "Expected all channels deallocated after reset." severity failure;
 
-    -- Verify tracking/lock using acquisition-derived {PRN, code, Doppler}.
-    assign_and_wait_lock(0, 1,  -1000, 848,  8, "Run4 result -> ch0");
-    assign_and_wait_lock(0, 20, -1000, 320,  8, "Run5 result -> ch0");
-    assign_and_wait_lock(0, 32, -1500, 1008, 8, "Run6 result -> ch0");
-    assign_and_wait_lock(0, 17, -1500, 992,  8, "Run7 result -> ch0");
-    assign_and_wait_lock(0, 11, 750,   928,  8, "Run8 result -> ch0");
-    assign_and_wait_lock(0, 11, 750,   928,  50, "Run9 stay on PRN11 -> ch0 (40ms hold)", 40, false);
+    -- Verify tracking/lock using software-generated acquisition tuples.
+    file_open(assign_status_v, assign_file, G_ASSIGN_FILE, read_mode);
+    if assign_status_v = open_ok then
+      readline(assign_file, assign_line_v);
+      read(assign_line_v, assign_case_count_v);
+      assert assign_case_count_v > 0
+        report "Assignment vector file has no rows: " & G_ASSIGN_FILE
+        severity failure;
+
+      for assign_idx_v in 0 to assign_case_count_v - 1 loop
+        readline(assign_file, assign_line_v);
+        read(assign_line_v, assign_ch_v);
+        read(assign_line_v, assign_prn_v);
+        read(assign_line_v, assign_dopp_v);
+        read(assign_line_v, assign_code_v);
+        read(assign_line_v, assign_max_ms_v);
+        read(assign_line_v, assign_hold_ms_v);
+        read(assign_line_v, assign_do_assign_v);
+
+        assign_and_wait_lock(
+          assign_ch_v,
+          assign_prn_v,
+          assign_dopp_v,
+          assign_code_v,
+          assign_max_ms_v,
+          "Assignment row " & integer'image(assign_idx_v),
+          assign_hold_ms_v,
+          (assign_do_assign_v /= 0)
+        );
+      end loop;
+      file_close(assign_file);
+    else
+      -- Fallback sequence kept for local bring-up when vectors are unavailable.
+      assign_and_wait_lock(0, 1,  -1000, 848,  8, "Fallback Run4 result -> ch0");
+      assign_and_wait_lock(0, 20, -1000, 320,  8, "Fallback Run5 result -> ch0");
+      assign_and_wait_lock(0, 32, -1500, 1008, 8, "Fallback Run6 result -> ch0");
+      assign_and_wait_lock(0, 17, -1500, 992,  8, "Fallback Run7 result -> ch0");
+      assign_and_wait_lock(0, 11, 750,   928,  8, "Fallback Run8 result -> ch0");
+      assign_and_wait_lock(0, 11, 750,   928,  50, "Fallback Run9 stay on PRN11 -> ch0 (40ms hold)", 40, false);
+    end if;
 
     log_msg("gps_l1_ca_chan_bank_tb completed");
     s_valid <= '0';

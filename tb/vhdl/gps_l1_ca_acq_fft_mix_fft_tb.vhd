@@ -1,10 +1,14 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use std.textio.all;
 use work.gps_l1_ca_pkg.all;
 use work.gps_l1_ca_acq_fft_pkg.all;
 
 entity gps_l1_ca_acq_fft_mix_fft_tb is
+  generic (
+    G_VECTOR_FILE : string := "sim/vectors/acq_fft_mix_fft_cases.txt"
+  );
 end entity;
 
 architecture tb of gps_l1_ca_acq_fft_mix_fft_tb is
@@ -34,6 +38,15 @@ begin
     );
 
   stim_proc : process
+    file vec_file : text;
+    variable read_status_v : file_open_status;
+    variable l_v           : line;
+    variable case_count_v  : integer;
+    variable dopp_v        : integer;
+    variable i_v           : integer;
+    variable q_v           : integer;
+    variable re_v          : integer;
+    variable im_v          : integer;
     variable expected_fft_v : cpx32_vec_t;
     variable cap_i_v        : sample_arr_t;
     variable cap_q_v        : sample_arr_t;
@@ -43,40 +56,64 @@ begin
     rst_n <= '1';
     wait until rising_edge(clk);
 
-    cap_i_v := (others => (others => '0'));
-    cap_q_v := (others => (others => '0'));
-    cap_i_v(0) := to_signed(1200, 16);
-    cap_i_v(1) := to_signed(-700, 16);
-    cap_q_v(0) := to_signed(300, 16);
-    cap_q_v(1) := to_signed(500, 16);
-
-    cap_i_i <= cap_i_v;
-    cap_q_i <= cap_q_v;
-    dopp_hz_i <= to_signed(1250, 16);
-    wait until rising_edge(clk);
-
-    start <= '1';
-    wait until rising_edge(clk);
-    start <= '0';
-    wait until rising_edge(clk);
-
-    assert done_o = '1'
-      report "Mix FFT generator did not assert done"
+    file_open(read_status_v, vec_file, G_VECTOR_FILE, read_mode);
+    assert read_status_v = open_ok
+      report "Unable to open mix/FFT vector file: " & G_VECTOR_FILE
       severity failure;
 
-    expected_fft_v := fft_radix2(
-      build_mixed_fft_input(cap_i_v, cap_q_v, to_signed(1250, 16)),
-      false
-    );
+    readline(vec_file, l_v);
+    read(l_v, case_count_v);
+    assert case_count_v > 0
+      report "Expected at least one mix/FFT vector case."
+      severity failure;
 
-    for k in 0 to C_NFFT - 1 loop
-      assert signal_fft_o(k).re = expected_fft_v(k).re
-        report "Signal FFT real mismatch at bin " & integer'image(k)
+    for case_idx_v in 0 to case_count_v - 1 loop
+      readline(vec_file, l_v);
+      read(l_v, dopp_v);
+
+      for s in 0 to C_SAMPLES_PER_MS - 1 loop
+        readline(vec_file, l_v);
+        read(l_v, i_v);
+        read(l_v, q_v);
+        cap_i_v(s) := to_signed(i_v, 16);
+        cap_q_v(s) := to_signed(q_v, 16);
+      end loop;
+
+      for k in 0 to C_NFFT - 1 loop
+        readline(vec_file, l_v);
+        read(l_v, re_v);
+        read(l_v, im_v);
+        expected_fft_v(k).re := to_signed(re_v, 32);
+        expected_fft_v(k).im := to_signed(im_v, 32);
+      end loop;
+
+      cap_i_i <= cap_i_v;
+      cap_q_i <= cap_q_v;
+      dopp_hz_i <= to_signed(dopp_v, 16);
+      wait until rising_edge(clk);
+
+      start <= '1';
+      wait until rising_edge(clk);
+      start <= '0';
+      wait until rising_edge(clk);
+
+      assert done_o = '1'
+        report "Mix FFT generator did not assert done"
         severity failure;
-      assert signal_fft_o(k).im = expected_fft_v(k).im
-        report "Signal FFT imag mismatch at bin " & integer'image(k)
-        severity failure;
+
+      for k in 0 to C_NFFT - 1 loop
+        assert signal_fft_o(k).re = expected_fft_v(k).re
+          report "Signal FFT real mismatch at case " & integer'image(case_idx_v) &
+                 ", bin " & integer'image(k)
+          severity failure;
+        assert signal_fft_o(k).im = expected_fft_v(k).im
+          report "Signal FFT imag mismatch at case " & integer'image(case_idx_v) &
+                 ", bin " & integer'image(k)
+          severity failure;
+      end loop;
     end loop;
+
+    file_close(vec_file);
 
     report "gps_l1_ca_acq_fft_mix_fft_tb passed";
     wait;

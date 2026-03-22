@@ -1,0 +1,75 @@
+{
+  "metric_ratio": 2.0,
+  "metric_tol": 4,
+  "pass": true,
+  "required_tags": [
+    "run4_dopp_inversion",
+    "run5_no_signal_a",
+    "run6_no_signal_b"
+  ],
+  "rows": [
+    {
+      "fft": {
+        "code": 0,
+        "dopp": 0,
+        "metric": 348,
+        "prn": 1,
+        "success": 1,
+        "valid": 1
+      },
+      "metric_error": 0.0,
+      "pass": true,
+      "tag": "run4_dopp_inversion",
+      "td": {
+        "code": 0,
+        "dopp": 0,
+        "metric": 696,
+        "prn": 1,
+        "success": 1,
+        "valid": 1
+      }
+    },
+    {
+      "fft": {
+        "code": 0,
+        "dopp": 0,
+        "metric": 0,
+        "prn": 1,
+        "success": 1,
+        "valid": 1
+      },
+      "metric_error": 0.0,
+      "pass": true,
+      "tag": "run5_no_signal_a",
+      "td": {
+        "code": 0,
+        "dopp": 0,
+        "metric": 0,
+        "prn": 1,
+        "success": 1,
+        "valid": 1
+      }
+    },
+    {
+      "fft": {
+        "code": 0,
+        "dopp": 0,
+        "metric": 0,
+        "prn": 1,
+        "success": 1,
+        "valid": 1
+      },
+      "metric_error": 0.0,
+      "pass": true,
+      "tag": "run6_no_signal_b",
+      "td": {
+        "code": 0,
+        "dopp": 0,
+        "metric": 0,
+        "prn": 1,
+        "success": 1,
+        "valid": 1
+      }
+    }
+  ]
+}

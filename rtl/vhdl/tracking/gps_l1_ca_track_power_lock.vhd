@@ -27,6 +27,16 @@ end entity;
 architecture rtl of gps_l1_ca_track_power_lock is
 begin
   process (all)
+    variable prompt_i_v          : integer;
+    variable prompt_q_v          : integer;
+    variable early_i_v           : integer;
+    variable early_q_v           : integer;
+    variable late_i_v            : integer;
+    variable late_q_v            : integer;
+    variable cn0_sig_avg_in_v    : integer;
+    variable cn0_noise_avg_in_v  : integer;
+    variable nbd_avg_in_v        : integer;
+    variable nbp_avg_in_v        : integer;
     variable sig_pow_v          : integer;
     variable early_pow_v        : integer;
     variable late_pow_v         : integer;
@@ -41,11 +51,24 @@ begin
     variable metric_v           : integer;
     variable cn0_v              : integer;
   begin
-    sig_pow_v := prompt_i_s_i * prompt_i_s_i + prompt_q_s_i * prompt_q_s_i;
-    early_pow_v := early_i_s_i * early_i_s_i + early_q_s_i * early_q_s_i;
-    late_pow_v := late_i_s_i * late_i_s_i + late_q_s_i * late_q_s_i;
+    -- Guard against uninitialized integer inputs at time 0.
+    prompt_i_v := clamp_i(prompt_i_s_i, -32767, 32767);
+    prompt_q_v := clamp_i(prompt_q_s_i, -32767, 32767);
+    early_i_v := clamp_i(early_i_s_i, -32767, 32767);
+    early_q_v := clamp_i(early_q_s_i, -32767, 32767);
+    late_i_v := clamp_i(late_i_s_i, -32767, 32767);
+    late_q_v := clamp_i(late_q_s_i, -32767, 32767);
+    cn0_sig_avg_in_v := clamp_i(cn0_sig_avg_i, 1, 1000000000);
+    cn0_noise_avg_in_v := clamp_i(cn0_noise_avg_i, 1, 1000000000);
+    nbd_avg_in_v := clamp_i(nbd_avg_i, -1000000000, 1000000000);
+    nbp_avg_in_v := clamp_i(nbp_avg_i, 1, 1000000000);
 
-    noise_sample_v := (early_pow_v + late_pow_v) / 2;
+    sig_pow_v := prompt_i_v * prompt_i_v + prompt_q_v * prompt_q_v;
+    early_pow_v := early_i_v * early_i_v + early_q_v * early_q_v;
+    late_pow_v := late_i_v * late_i_v + late_q_v * late_q_v;
+
+    -- Compute the mean without overflowing when both powers are near INTEGER'high.
+    noise_sample_v := (early_pow_v / 2) + (late_pow_v / 2);
     if noise_sample_v < 1 then
       noise_sample_v := 1;
     end if;
@@ -55,26 +78,30 @@ begin
       sig_sample_v := 1;
     end if;
 
-    cn0_sig_avg_v := cn0_sig_avg_i + (sig_sample_v - cn0_sig_avg_i) / C_CN0_AVG_DIV;
-    cn0_noise_avg_v := cn0_noise_avg_i + (noise_sample_v - cn0_noise_avg_i) / C_CN0_AVG_DIV;
+    cn0_sig_avg_v := cn0_sig_avg_in_v + (sig_sample_v - cn0_sig_avg_in_v) / C_CN0_AVG_DIV;
+    cn0_noise_avg_v := cn0_noise_avg_in_v + (noise_sample_v - cn0_noise_avg_in_v) / C_CN0_AVG_DIV;
 
     if cn0_sig_avg_v < 1 then
       cn0_sig_avg_v := 1;
+    elsif cn0_sig_avg_v > 2000000 then
+      cn0_sig_avg_v := 2000000;
     end if;
     if cn0_noise_avg_v < 1 then
       cn0_noise_avg_v := 1;
+    elsif cn0_noise_avg_v > 2000000 then
+      cn0_noise_avg_v := 2000000;
     end if;
 
     cn0_v := cn0_dbhz_from_powers(cn0_sig_avg_v, cn0_noise_avg_v);
 
-    nbd_sample_v := (prompt_i_s_i * prompt_i_s_i) - (prompt_q_s_i * prompt_q_s_i);
-    nbp_sample_v := (prompt_i_s_i * prompt_i_s_i) + (prompt_q_s_i * prompt_q_s_i);
+    nbd_sample_v := (prompt_i_v * prompt_i_v) - (prompt_q_v * prompt_q_v);
+    nbp_sample_v := (prompt_i_v * prompt_i_v) + (prompt_q_v * prompt_q_v);
     if nbp_sample_v < 1 then
       nbp_sample_v := 1;
     end if;
 
-    nbd_avg_v := nbd_avg_i + (nbd_sample_v - nbd_avg_i) / C_LOCK_SMOOTH_DIV;
-    nbp_avg_v := nbp_avg_i + (nbp_sample_v - nbp_avg_i) / C_LOCK_SMOOTH_DIV;
+    nbd_avg_v := nbd_avg_in_v + (nbd_sample_v - nbd_avg_in_v) / C_LOCK_SMOOTH_DIV;
+    nbp_avg_v := nbp_avg_in_v + (nbp_sample_v - nbp_avg_in_v) / C_LOCK_SMOOTH_DIV;
     if nbp_avg_v < 1 then
       nbp_avg_v := 1;
     end if;

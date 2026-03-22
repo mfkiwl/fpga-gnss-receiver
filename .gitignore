@@ -17,3 +17,6 @@
 /2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/
 /2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN.dat
 /2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat
+
+# Unit test logs
+/sim/reports/**/*.log

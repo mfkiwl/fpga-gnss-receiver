@@ -11,7 +11,8 @@ entity gps_l1_ca_acq_tb is
     G_FILE_SAMPLE_RATE_SPS: integer := 2000000;
     G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
     G_MAX_FILE_SAMPLES    : integer := 0;
-    G_DUT_ACQ_IMPL_FFT    : boolean := false
+    G_DUT_ACQ_IMPL_FFT    : boolean := false;
+    G_ENABLE_FULL_PRN_SWEEP : boolean := true
   );
 end entity;
 
@@ -178,15 +179,13 @@ begin
 
     procedure log_acq_tuple(case_tag : in string) is
     begin
-      if not G_USE_FILE_INPUT then
-        log_msg("ACQ_TUPLE tag=" & case_tag &
-                " success=" & std_logic'image(acq_success) &
-                " valid=" & std_logic'image(result_valid) &
-                " prn=" & integer'image(to_integer(result_prn)) &
-                " code=" & integer'image(to_integer(result_code)) &
-                " dopp=" & integer'image(to_integer(result_dopp)) &
-                " metric=" & integer'image(to_integer(result_metric)));
-      end if;
+      log_msg("ACQ_TUPLE tag=" & case_tag &
+              " success=" & std_logic'image(acq_success) &
+              " valid=" & std_logic'image(result_valid) &
+              " prn=" & integer'image(to_integer(result_prn)) &
+              " code=" & integer'image(to_integer(result_code)) &
+              " dopp=" & integer'image(to_integer(result_dopp)) &
+              " metric=" & integer'image(to_integer(result_metric)));
     end procedure;
 
     procedure run_prn_case(
@@ -341,50 +340,70 @@ begin
       s_q <= to_signed(50, 16);
     end if;
 
-    -- Full code-Doppler search space for PRNs found in stimulus file.
+    -- File-replay acquisition campaign.
     if G_USE_FILE_INPUT then
-      step_hz_v := abs(to_integer(doppler_step));
-      if step_hz_v < 1 then
-        step_hz_v := 1;
+      if G_ENABLE_FULL_PRN_SWEEP then
+        step_hz_v := abs(to_integer(doppler_step));
+        if step_hz_v < 1 then
+          step_hz_v := 1;
+        end if;
+        full_dopp_bins_v := (abs(to_integer(doppler_max) - to_integer(doppler_min)) / step_hz_v) + 1;
+        if full_dopp_bins_v > 81 then
+          full_dopp_bins_v := 81;
+        elsif full_dopp_bins_v < 1 then
+          full_dopp_bins_v := 1;
+        end if;
+        full_code_bins_v := 1023;
+        full_space_samples_req_v := C_SAMPLES_PER_MS * (1 + (full_code_bins_v * full_dopp_bins_v));
+
+        assert G_MAX_FILE_SAMPLES = 0 or G_MAX_FILE_SAMPLES >= full_space_samples_req_v
+          report "Run4 PRN 1 full code-doppler requires G_MAX_FILE_SAMPLES >= " &
+                 integer'image(full_space_samples_req_v) & "."
+          severity failure;
+
+        prn_start <= to_unsigned(1, prn_start'length);
+        prn_stop <= to_unsigned(1, prn_stop'length);
+        code_bins_i <= to_unsigned(full_code_bins_v, code_bins_i'length);
+        code_step_i <= to_unsigned(1, code_step_i'length);
+        doppler_bins_i <= to_unsigned(full_dopp_bins_v, doppler_bins_i'length);
+        run_fullspace_prn_case(1, realistic_thresh_v, "Run4 PRN 1 full code-doppler", "run4_prn1_fullspace");
+
+        -- Derive a robust non-zero threshold from full-space PRN 1 before testing remaining PRNs.
+        fullspace_thresh_v := shift_right(result_metric, 4);
+        if fullspace_thresh_v = to_unsigned(0, fullspace_thresh_v'length) then
+          fullspace_thresh_v := to_unsigned(1, fullspace_thresh_v'length);
+        end if;
+
+        log_msg("PRN sweep report (1..32):");
+        log_prn_sweep_finding(1);
+        for sweep_prn_v in 2 to 32 loop
+          run_fullspace_prn_case(
+            sweep_prn_v,
+            fullspace_thresh_v,
+            "Run PRN " & trim_int_img(sweep_prn_v) & " full code-doppler",
+            "run_prn" & trim_int_img(sweep_prn_v) & "_fullspace"
+          );
+          log_prn_sweep_finding(sweep_prn_v);
+        end loop;
+      else
+        log_msg("Running reduced file-profile PRN set for GNSS-DSP cross-check.");
+        doppler_min <= to_signed(-2000, doppler_min'length);
+        doppler_max <= to_signed(2000, doppler_max'length);
+        doppler_step <= to_signed(250, doppler_step'length);
+        code_bins_i <= to_unsigned(64, code_bins_i'length);
+        code_step_i <= to_unsigned(16, code_step_i'length);
+        doppler_bins_i <= to_unsigned(17, doppler_bins_i'length);
+
+        run_fullspace_prn_case(1, to_unsigned(0, detect_thresh'length), "File PRN 1", "file_prn1");
+        fullspace_thresh_v := shift_right(result_metric, 4);
+        if fullspace_thresh_v = to_unsigned(0, fullspace_thresh_v'length) then
+          fullspace_thresh_v := to_unsigned(1, fullspace_thresh_v'length);
+        end if;
+        run_fullspace_prn_case(11, fullspace_thresh_v, "File PRN 11", "file_prn11");
+        run_fullspace_prn_case(17, fullspace_thresh_v, "File PRN 17", "file_prn17");
+        run_fullspace_prn_case(20, fullspace_thresh_v, "File PRN 20", "file_prn20");
+        run_fullspace_prn_case(32, fullspace_thresh_v, "File PRN 32", "file_prn32");
       end if;
-      full_dopp_bins_v := (abs(to_integer(doppler_max) - to_integer(doppler_min)) / step_hz_v) + 1;
-      if full_dopp_bins_v > 81 then
-        full_dopp_bins_v := 81;
-      elsif full_dopp_bins_v < 1 then
-        full_dopp_bins_v := 1;
-      end if;
-      full_code_bins_v := 1023;
-      full_space_samples_req_v := C_SAMPLES_PER_MS * (1 + (full_code_bins_v * full_dopp_bins_v));
-
-      assert G_MAX_FILE_SAMPLES = 0 or G_MAX_FILE_SAMPLES >= full_space_samples_req_v
-        report "Run4 PRN 1 full code-doppler requires G_MAX_FILE_SAMPLES >= " &
-               integer'image(full_space_samples_req_v) & "."
-        severity failure;
-
-      prn_start <= to_unsigned(1, prn_start'length);
-      prn_stop <= to_unsigned(1, prn_stop'length);
-      code_bins_i <= to_unsigned(full_code_bins_v, code_bins_i'length);
-      code_step_i <= to_unsigned(1, code_step_i'length);
-      doppler_bins_i <= to_unsigned(full_dopp_bins_v, doppler_bins_i'length);
-      run_fullspace_prn_case(1, realistic_thresh_v, "Run4 PRN 1 full code-doppler", "run4_prn1_fullspace");
-
-      -- Derive a robust non-zero threshold from full-space PRN 1 before testing remaining PRNs.
-      fullspace_thresh_v := shift_right(result_metric, 4);
-      if fullspace_thresh_v = to_unsigned(0, fullspace_thresh_v'length) then
-        fullspace_thresh_v := to_unsigned(1, fullspace_thresh_v'length);
-      end if;
-
-      log_msg("PRN sweep report (1..32):");
-      log_prn_sweep_finding(1);
-      for sweep_prn_v in 2 to 32 loop
-        run_fullspace_prn_case(
-          sweep_prn_v,
-          fullspace_thresh_v,
-          "Run PRN " & trim_int_img(sweep_prn_v) & " full code-doppler",
-          "run_prn" & trim_int_img(sweep_prn_v) & "_fullspace"
-        );
-        log_prn_sweep_finding(sweep_prn_v);
-      end loop;
     else
       log_msg("Skipping full code-doppler PRN 1 run when not using file input.");
 

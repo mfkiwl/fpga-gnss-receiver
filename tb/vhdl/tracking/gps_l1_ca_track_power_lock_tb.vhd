@@ -1,10 +1,14 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use std.textio.all;
 use std.env.all;
 use work.gps_l1_ca_track_pkg.all;
 
 entity gps_l1_ca_track_power_lock_tb is
+  generic (
+    G_VECTOR_FILE : string := "sim/vectors/track_power_lock_vectors.txt"
+  );
 end entity;
 
 architecture tb of gps_l1_ca_track_power_lock_tb is
@@ -26,18 +30,6 @@ architecture tb of gps_l1_ca_track_power_lock_tb is
   signal cn0_dbhz_o_s      : integer;
   signal carrier_metric_o_s: integer;
 
-  function exp_metric(nbd_v : integer; nbp_v : integer) return integer is
-    variable m_v : integer;
-  begin
-    m_v := (nbd_v * 32768) / nbp_v;
-    if m_v > 32767 then
-      return 32767;
-    elsif m_v < -32768 then
-      return -32768;
-    else
-      return m_v;
-    end if;
-  end function;
 begin
   dut : entity work.gps_l1_ca_track_power_lock
     port map (
@@ -60,57 +52,90 @@ begin
     );
 
   stim : process
-    variable sig_pow_v      : integer;
-    variable early_pow_v    : integer;
-    variable late_pow_v     : integer;
-    variable noise_sample_v : integer;
-    variable sig_sample_v   : integer;
-    variable exp_sig_avg_v  : integer;
-    variable exp_noise_avg_v: integer;
-    variable exp_nbd_avg_v  : integer;
-    variable exp_nbp_avg_v  : integer;
-    variable nbd_sample_v   : integer;
-    variable nbp_sample_v   : integer;
-    variable exp_cn0_v      : integer;
+    file vec_file            : text;
+    variable read_status_v   : file_open_status;
+    variable l_v             : line;
+    variable case_count_v    : integer;
+    variable prompt_i_v      : integer;
+    variable prompt_q_v      : integer;
+    variable early_i_v       : integer;
+    variable early_q_v       : integer;
+    variable late_i_v        : integer;
+    variable late_q_v        : integer;
+    variable cn0_sig_i_v     : integer;
+    variable cn0_noise_i_v   : integer;
+    variable nbd_i_v         : integer;
+    variable nbp_i_v         : integer;
+    variable exp_sig_avg_v   : integer;
+    variable exp_noise_avg_v : integer;
+    variable exp_nbd_avg_v   : integer;
+    variable exp_nbp_avg_v   : integer;
+    variable exp_cn0_v       : integer;
+    variable exp_metric_v    : integer;
   begin
-    prompt_i_s <= 80;
-    prompt_q_s <= 20;
-    early_i_s <= 64;
-    early_q_s <= 16;
-    late_i_s <= 52;
-    late_q_s <= 10;
-    cn0_sig_avg_s <= 1000;
-    cn0_noise_avg_s <= 200;
-    nbd_avg_s <= 100;
-    nbp_avg_s <= 300;
+    file_open(read_status_v, vec_file, G_VECTOR_FILE, read_mode);
+    assert read_status_v = open_ok
+      report "Unable to open power/lock vector file: " & G_VECTOR_FILE
+      severity failure;
 
-    wait for 1 ns;
+    readline(vec_file, l_v);
+    read(l_v, case_count_v);
+    assert case_count_v > 0
+      report "Expected at least one power/lock vector row."
+      severity failure;
 
-    sig_pow_v := 80 * 80 + 20 * 20;
-    early_pow_v := 64 * 64 + 16 * 16;
-    late_pow_v := 52 * 52 + 10 * 10;
-    noise_sample_v := (early_pow_v + late_pow_v) / 2;
-    sig_sample_v := sig_pow_v - noise_sample_v;
-    if sig_sample_v < 1 then
-      sig_sample_v := 1;
-    end if;
+    for case_idx_v in 0 to case_count_v - 1 loop
+      readline(vec_file, l_v);
+      read(l_v, prompt_i_v);
+      read(l_v, prompt_q_v);
+      read(l_v, early_i_v);
+      read(l_v, early_q_v);
+      read(l_v, late_i_v);
+      read(l_v, late_q_v);
+      read(l_v, cn0_sig_i_v);
+      read(l_v, cn0_noise_i_v);
+      read(l_v, nbd_i_v);
+      read(l_v, nbp_i_v);
+      read(l_v, exp_sig_avg_v);
+      read(l_v, exp_noise_avg_v);
+      read(l_v, exp_nbd_avg_v);
+      read(l_v, exp_nbp_avg_v);
+      read(l_v, exp_cn0_v);
+      read(l_v, exp_metric_v);
 
-    exp_sig_avg_v := 1000 + (sig_sample_v - 1000) / C_CN0_AVG_DIV;
-    exp_noise_avg_v := 200 + (noise_sample_v - 200) / C_CN0_AVG_DIV;
+      prompt_i_s <= prompt_i_v;
+      prompt_q_s <= prompt_q_v;
+      early_i_s <= early_i_v;
+      early_q_s <= early_q_v;
+      late_i_s <= late_i_v;
+      late_q_s <= late_q_v;
+      cn0_sig_avg_s <= cn0_sig_i_v;
+      cn0_noise_avg_s <= cn0_noise_i_v;
+      nbd_avg_s <= nbd_i_v;
+      nbp_avg_s <= nbp_i_v;
+      wait for 1 ns;
 
-    nbd_sample_v := (80 * 80) - (20 * 20);
-    nbp_sample_v := (80 * 80) + (20 * 20);
-    exp_nbd_avg_v := 100 + (nbd_sample_v - 100) / C_LOCK_SMOOTH_DIV;
-    exp_nbp_avg_v := 300 + (nbp_sample_v - 300) / C_LOCK_SMOOTH_DIV;
+      assert cn0_sig_avg_o_s = exp_sig_avg_v
+        report "cn0_sig_avg mismatch at power/lock case " & integer'image(case_idx_v)
+        severity failure;
+      assert cn0_noise_avg_o_s = exp_noise_avg_v
+        report "cn0_noise_avg mismatch at power/lock case " & integer'image(case_idx_v)
+        severity failure;
+      assert nbd_avg_o_s = exp_nbd_avg_v
+        report "nbd_avg mismatch at power/lock case " & integer'image(case_idx_v)
+        severity failure;
+      assert nbp_avg_o_s = exp_nbp_avg_v
+        report "nbp_avg mismatch at power/lock case " & integer'image(case_idx_v)
+        severity failure;
+      assert cn0_dbhz_o_s = exp_cn0_v
+        report "cn0_dbhz mismatch at power/lock case " & integer'image(case_idx_v)
+        severity failure;
+      assert carrier_metric_o_s = exp_metric_v
+        report "carrier_metric mismatch at power/lock case " & integer'image(case_idx_v)
+        severity failure;
+    end loop;
 
-    exp_cn0_v := cn0_dbhz_from_powers(exp_sig_avg_v, exp_noise_avg_v);
-
-    assert cn0_sig_avg_o_s = exp_sig_avg_v severity failure;
-    assert cn0_noise_avg_o_s = exp_noise_avg_v severity failure;
-    assert nbd_avg_o_s = exp_nbd_avg_v severity failure;
-    assert nbp_avg_o_s = exp_nbp_avg_v severity failure;
-    assert cn0_dbhz_o_s = exp_cn0_v severity failure;
-    assert carrier_metric_o_s = exp_metric(exp_nbd_avg_v, exp_nbp_avg_v) severity failure;
+    file_close(vec_file);
 
     finish;
   end process;

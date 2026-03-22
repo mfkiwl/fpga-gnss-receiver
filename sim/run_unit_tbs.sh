@@ -4,6 +4,15 @@ set -u -o pipefail
 UNIT_TBS=(
   gps_l1_ca_gain_ctrl_tb
   gps_l1_ca_acq_sched_tb
+  gps_l1_ca_acq_fft_prn_gen_tb
+  gps_l1_ca_acq_fft_code_gen_tb
+  gps_l1_ca_acq_fft_mix_fft_tb
+  gps_l1_ca_acq_fft_corr_tb
+  gps_l1_ca_acq_fft_tb
+  gps_l1_ca_track_discriminators_tb
+  gps_l1_ca_track_loop_filters_tb
+  gps_l1_ca_track_power_lock_tb
+  gps_l1_ca_track_lock_state_tb
   gps_l1_ca_acq_tb
   gps_l1_ca_chan_bank_tb
   gps_l1_ca_chan_bank_nav_store_tb
@@ -17,6 +26,15 @@ NVC_STDERR_LEVEL="${NVC_STDERR_LEVEL:-none}"
 UNIT_RUN_LINT="${UNIT_RUN_LINT:-1}"
 UNIT_ACQ_WAVE_FILE="${UNIT_ACQ_WAVE_FILE:-sim/gps_l1_ca_acq_tb.fst}"
 UNIT_ACQ_IMPL_FFT="${UNIT_ACQ_IMPL_FFT:-false}"
+UNIT_GEN_GNSS_VECTORS="${UNIT_GEN_GNSS_VECTORS:-1}"
+UNIT_GNSS_VECTOR_PROFILE="${UNIT_GNSS_VECTOR_PROFILE:-unit}"
+UNIT_LOG_DIR="${UNIT_LOG_DIR:-sim/reports/unit_logs}"
+
+mkdir -p "${UNIT_LOG_DIR}"
+
+if [[ "${UNIT_GEN_GNSS_VECTORS}" == "1" || "${UNIT_GEN_GNSS_VECTORS}" == "true" || "${UNIT_GEN_GNSS_VECTORS}" == "TRUE" ]]; then
+  python3 sim/gen_gnss_dsp_vectors.py --profile "${UNIT_GNSS_VECTOR_PROFILE}"
+fi
 
 if ! command -v nvc >/dev/null 2>&1; then
   echo "error: nvc not found. Cannot run unit TBs."
@@ -37,6 +55,8 @@ failed_tbs=()
 
 for tb in "${UNIT_TBS[@]}"; do
   echo "-- ${tb}"
+  tb_log_file="${UNIT_LOG_DIR}/${tb}.log"
+  rm -f "${tb_log_file}"
   elab_cmd=(nvc --std=2008 --stderr="${NVC_STDERR_LEVEL}" -e)
   run_cmd=(
     nvc --std=2008
@@ -51,11 +71,21 @@ for tb in "${UNIT_TBS[@]}"; do
     run_cmd+=(--wave="${UNIT_ACQ_WAVE_FILE}")
     echo "   wave: ${UNIT_ACQ_WAVE_FILE}"
     echo "   acq impl fft: ${UNIT_ACQ_IMPL_FFT}"
+  elif [[ "${tb}" == "gps_l1_ca_acq_fft_tb" ]]; then
+    # The integrated FFT acquisition TB allocates large scorebanks at elaboration.
+    elab_cmd=(nvc --std=2008 --stderr="${NVC_STDERR_LEVEL}" -H 512m -e)
+    run_cmd=(
+      nvc --std=2008
+      --stderr="${NVC_STDERR_LEVEL}"
+      -H 512m
+      -r "${tb}"
+      --stop-time="${UNIT_TB_STOP_TIME}"
+    )
   fi
   elab_cmd+=("${tb}")
 
   if "${elab_cmd[@]}" && \
-     "${run_cmd[@]}"; then
+     "${run_cmd[@]}" 2>&1 | tee "${tb_log_file}"; then
     pass_count=$((pass_count + 1))
   else
     fail_count=$((fail_count + 1))

@@ -9,7 +9,7 @@ GNSS_DATA_DECIMATED_FILE := 2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat
 GNSS_DATA_DECIMATED_SRC := $(GNSS_DATA_DIR)/$(GNSS_DATA_DECIMATED_FILE)
 GNSS_TB_INPUT_FILE := $(GNSS_DATA_DECIMATED_SRC)
 
-.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-chan-bank sim-chan-bank-nav-store sim-acq-file sim-acq-equiv sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
+.PHONY: help fetch-gnss-data lint-vhdl sim-smoke sim-unit sim-chan-bank sim-chan-bank-nav-store sim-acq-file sim-acq-equiv sim-gnss-dsp sim-regress phase3-eval phase3-gate synth-check schematic schematic-local waves
 
 help:
 	@echo "Targets:"
@@ -22,6 +22,7 @@ help:
 	@echo "  make sim-chan-bank-nav-store - Run gps_l1_ca_chan_bank_nav_store_tb"
 	@echo "  make sim-acq-file - Run gps_l1_ca_acq_tb with GNSS stimulus file replay"
 	@echo "  make sim-acq-equiv - Run gps_l1_ca_acq_tb in TD and FFT modes and compare tuples"
+	@echo "  make sim-gnss-dsp - Run GNSS-DSP vector generation + acquisition tuple cross-check"
 	@echo "  make sim-regress  - Run regression suite"
 	@echo "  make phase3-eval  - Run smoke + Phase 3 metric report (non-gating)"
 	@echo "                     Set PHASE3_ENABLE_WAVE=0 to disable wave dump"
@@ -101,6 +102,9 @@ sim-acq-file:
 
 sim-acq-equiv:
 	@./sim/run_acq_td_fft_equiv.sh
+
+sim-gnss-dsp:
+	@./sim/run_gnss_dsp_crosscheck.sh
 
 sim-regress:
 	@./sim/run_regression.sh

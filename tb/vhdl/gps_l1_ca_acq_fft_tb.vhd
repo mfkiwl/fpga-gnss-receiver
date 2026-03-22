@@ -1,9 +1,13 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use std.textio.all;
 use work.gps_l1_ca_pkg.all;
 
 entity gps_l1_ca_acq_fft_tb is
+  generic (
+    G_EXPECTED_FILE : string := "sim/vectors/acq_fft_tb_expected.txt"
+  );
 end entity;
 
 architecture tb of gps_l1_ca_acq_fft_tb is
@@ -70,6 +74,13 @@ begin
     );
 
   stim_proc : process
+    file exp_file : text;
+    variable read_status_v : file_open_status;
+    variable l_v : line;
+    variable exp_prn_v : integer;
+    variable exp_dopp_v : integer;
+    variable exp_code_v : integer;
+    variable exp_metric_v : integer;
     variable seen_done_v : boolean := false;
   begin
     rst_n <= '0';
@@ -77,6 +88,17 @@ begin
     wait for 3 * C_CLK_PERIOD;
     rst_n <= '1';
     wait until rising_edge(clk);
+
+    file_open(read_status_v, exp_file, G_EXPECTED_FILE, read_mode);
+    assert read_status_v = open_ok
+      report "Unable to open acquisition FFT expected tuple file: " & G_EXPECTED_FILE
+      severity failure;
+    readline(exp_file, l_v);
+    read(l_v, exp_prn_v);
+    read(l_v, exp_dopp_v);
+    read(l_v, exp_code_v);
+    read(l_v, exp_metric_v);
+    file_close(exp_file);
 
     core_en <= '1';
     start_pulse <= '1';
@@ -103,8 +125,17 @@ begin
     assert result_valid = '1'
       report "FFT block expected valid result on success"
       severity failure;
-    assert result_prn = to_unsigned(1, 6)
+    assert to_integer(result_prn) = exp_prn_v
       report "FFT block returned unexpected PRN"
+      severity failure;
+    assert to_integer(result_dopp) = exp_dopp_v
+      report "FFT block returned unexpected Doppler"
+      severity failure;
+    assert to_integer(result_code) = exp_code_v
+      report "FFT block returned unexpected code phase"
+      severity failure;
+    assert to_integer(result_metric) = exp_metric_v
+      report "FFT block returned unexpected metric"
       severity failure;
 
     report "gps_l1_ca_acq_fft_tb passed";

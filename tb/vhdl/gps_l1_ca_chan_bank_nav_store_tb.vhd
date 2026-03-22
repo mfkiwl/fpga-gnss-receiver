@@ -1,6 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use std.textio.all;
 use std.env.all;
 use work.gps_l1_ca_pkg.all;
 use work.gps_l1_ca_nco_pkg.all;
@@ -12,7 +13,8 @@ entity gps_l1_ca_chan_bank_nav_store_tb is
     G_USE_FILE_INPUT      : boolean := true;
     G_INPUT_FILE          : string  := "2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN/2013_04_04_GNSS_SIGNAL_at_CTTC_SPAIN_2msps.dat";
     G_FILE_SAMPLE_RATE_SPS: integer := 2000000;
-    G_DUT_SAMPLE_RATE_SPS : integer := 2000000
+    G_DUT_SAMPLE_RATE_SPS : integer := 2000000;
+    G_CN0_RANGE_FILE      : string  := "sim/vectors/chan_bank_nav_store_cn0_ranges.txt"
   );
 end entity;
 
@@ -384,6 +386,15 @@ begin
     variable in_file_cnt_v   : integer := 0;
     variable out_samp_cnt_v  : integer := 0;
     variable run_samples_v   : integer := 0;
+    variable exp_cn0_min_v   : int_arr_t(0 to C_NUM_CH - 1) := (others => 0);
+    variable exp_cn0_max_v   : int_arr_t(0 to C_NUM_CH - 1) := (others => 99);
+    file cn0_range_file      : text;
+    variable cn0_status_v    : file_open_status;
+    variable cn0_line_v      : line;
+    variable cn0_count_v     : integer := 0;
+    variable cn0_ch_v        : integer := 0;
+    variable cn0_min_v       : integer := 0;
+    variable cn0_max_v       : integer := 0;
   begin
     for ch in 0 to C_NUM_CH - 1 loop
       prn_seq_v(ch) := build_prn_sequence(C_PRNS(ch));
@@ -391,6 +402,23 @@ begin
       chip_idx_v(ch) := C_CODES(ch) mod 1023;
       code_nco_v(ch) := shift_left(to_unsigned(chip_idx_v(ch), 32), 21);
     end loop;
+
+    file_open(cn0_status_v, cn0_range_file, G_CN0_RANGE_FILE, read_mode);
+    if cn0_status_v = open_ok then
+      readline(cn0_range_file, cn0_line_v);
+      read(cn0_line_v, cn0_count_v);
+      for idx in 0 to cn0_count_v - 1 loop
+        readline(cn0_range_file, cn0_line_v);
+        read(cn0_line_v, cn0_ch_v);
+        read(cn0_line_v, cn0_min_v);
+        read(cn0_line_v, cn0_max_v);
+        if cn0_ch_v >= 0 and cn0_ch_v < C_NUM_CH then
+          exp_cn0_min_v(cn0_ch_v) := cn0_min_v;
+          exp_cn0_max_v(cn0_ch_v) := cn0_max_v;
+        end if;
+      end loop;
+      file_close(cn0_range_file);
+    end if;
 
     rst_n <= '0';
     for i in 0 to 3 loop
@@ -526,6 +554,12 @@ begin
         severity failure;
       assert lock_seen_v(ch) = '1'
         report "Expected lock to be seen on channel " & integer'image(ch)
+        severity failure;
+      assert to_integer(chan_cn0_dbhz_o(ch)) >= exp_cn0_min_v(ch)
+        report "Expected CN0 lower bound violation on channel " & integer'image(ch)
+        severity failure;
+      assert to_integer(chan_cn0_dbhz_o(ch)) <= exp_cn0_max_v(ch)
+        report "Expected CN0 upper bound violation on channel " & integer'image(ch)
         severity failure;
     end loop;
 

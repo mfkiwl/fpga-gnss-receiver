@@ -1,0 +1,59 @@
+{
+  "rows": [
+    {
+      "channel": 0,
+      "code": 240,
+      "do_assign": 1,
+      "dopp_hz": -1250,
+      "hold_ms": 1,
+      "max_ms": 8,
+      "prn": 1
+    },
+    {
+      "channel": 0,
+      "code": 480,
+      "do_assign": 1,
+      "dopp_hz": 250,
+      "hold_ms": 1,
+      "max_ms": 8,
+      "prn": 20
+    },
+    {
+      "channel": 0,
+      "code": 112,
+      "do_assign": 1,
+      "dopp_hz": -500,
+      "hold_ms": 1,
+      "max_ms": 8,
+      "prn": 32
+    },
+    {
+      "channel": 0,
+      "code": 976,
+      "do_assign": 1,
+      "dopp_hz": -1500,
+      "hold_ms": 1,
+      "max_ms": 8,
+      "prn": 17
+    },
+    {
+      "channel": 0,
+      "code": 96,
+      "do_assign": 1,
+      "dopp_hz": 1000,
+      "hold_ms": 1,
+      "max_ms": 8,
+      "prn": 11
+    },
+    {
+      "channel": 0,
+      "code": 928,
+      "do_assign": 0,
+      "dopp_hz": 750,
+      "hold_ms": 40,
+      "max_ms": 50,
+      "prn": 11
+    }
+  ],
+  "source": "validate_acq_fullspace_prn1"
+}

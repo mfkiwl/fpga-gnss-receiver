@@ -1,0 +1,4 @@
+tag,td_success,fft_success,td_valid,fft_valid,td_prn,fft_prn,td_code,fft_code,td_dopp,fft_dopp,td_metric,fft_metric,metric_error,pass
+run4_dopp_inversion,1,1,1,1,1,1,0,0,0,0,696,348,0.000000,1
+run5_no_signal_a,1,1,1,1,1,1,0,0,0,0,0,0,0.000000,1
+run6_no_signal_b,1,1,1,1,1,1,0,0,0,0,0,0,0.000000,1

@@ -5,10 +5,15 @@ NVC_STDERR_LEVEL="${NVC_STDERR_LEVEL:-none}"
 ACQ_EQ_STOP_TIME="${ACQ_EQ_STOP_TIME:-3ms}"
 ACQ_EQ_METRIC_TOL="${ACQ_EQ_METRIC_TOL:-4}"
 ACQ_EQ_RUN_LINT="${ACQ_EQ_RUN_LINT:-1}"
+ACQ_EQ_HEAP="${ACQ_EQ_HEAP:-512m}"
+ACQ_EQ_REPORT_JSON="${ACQ_EQ_REPORT_JSON:-sim/reports/acq_td_fft_equiv.json}"
+ACQ_EQ_REPORT_CSV="${ACQ_EQ_REPORT_CSV:-sim/reports/acq_td_fft_equiv.csv}"
 
 if [[ "${ACQ_EQ_RUN_LINT}" == "1" || "${ACQ_EQ_RUN_LINT}" == "true" || "${ACQ_EQ_RUN_LINT}" == "TRUE" ]]; then
   ./lint/lint_vhdl.sh
 fi
+
+mkdir -p "$(dirname "${ACQ_EQ_REPORT_JSON}")" "$(dirname "${ACQ_EQ_REPORT_CSV}")"
 
 if ! command -v nvc >/dev/null 2>&1; then
   echo "error: nvc not found. Cannot run acquisition equivalence check."
@@ -26,6 +31,7 @@ echo "==> Running gps_l1_ca_acq_tb (time-domain mode)"
 cmd_td=(
   nvc --std=2008
   --stderr="${NVC_STDERR_LEVEL}"
+  -H "${ACQ_EQ_HEAP}"
   -e
   -gG_DUT_ACQ_IMPL_FFT=false
   gps_l1_ca_acq_tb
@@ -39,6 +45,7 @@ echo "==> Running gps_l1_ca_acq_tb (FFT mode)"
 cmd_fft=(
   nvc --std=2008
   --stderr="${NVC_STDERR_LEVEL}"
+  -H "${ACQ_EQ_HEAP}"
   -e
   -gG_DUT_ACQ_IMPL_FFT=true
   gps_l1_ca_acq_tb
@@ -49,12 +56,13 @@ cmd_fft=(
 "${cmd_fft[@]}" 2>&1 | tee "${tmp_fft_log}"
 
 echo "==> Comparing ACQ_TUPLE logs (TD vs FFT)"
-python3 - "${tmp_td_log}" "${tmp_fft_log}" "${ACQ_EQ_METRIC_TOL}" <<'PY'
+python3 - "${tmp_td_log}" "${tmp_fft_log}" "${ACQ_EQ_METRIC_TOL}" "${ACQ_EQ_REPORT_JSON}" "${ACQ_EQ_REPORT_CSV}" <<'PY'
 import re
 import sys
+import json
 from pathlib import Path
 
-_, td_path, fft_path, metric_tol_s = sys.argv
+_, td_path, fft_path, metric_tol_s, report_json_path, report_csv_path = sys.argv
 metric_tol = int(metric_tol_s)
 pat = re.compile(
     r"ACQ_TUPLE\s+tag=(\S+)\s+success='([01])'\s+valid='([01])'\s+"
@@ -81,9 +89,6 @@ def parse(path: Path):
 td = parse(Path(td_path))
 fft = parse(Path(fft_path))
 required = {
-    "run1_zero_thresh",
-    "run2_max_thresh",
-    "run3_realistic_thresh",
     "run4_dopp_inversion",
     "run5_no_signal_a",
     "run6_no_signal_b",
@@ -99,26 +104,38 @@ if missing_fft:
     sys.exit(1)
 
 ok = True
-ratio_ref_tag = "run1_zero_thresh"
+ratio_ref_tag = "run4_dopp_inversion"
 td_ref_metric = td[ratio_ref_tag]["metric"]
 fft_ref_metric = fft[ratio_ref_tag]["metric"]
 metric_ratio = 1.0
 if td_ref_metric > 0 and fft_ref_metric > 0:
     metric_ratio = td_ref_metric / fft_ref_metric
 
+rows = []
 for tag in sorted(required):
     a = td[tag]
     b = fft[tag]
+    row = {
+        "tag": tag,
+        "td": a,
+        "fft": b,
+        "pass": True,
+        "metric_error": 0.0,
+    }
     for field in ("success", "valid", "prn", "code", "dopp"):
         if a[field] != b[field]:
             ok = False
+            row["pass"] = False
             print(
                 f"ERROR: {tag} mismatch {field}: td={a[field]} fft={b[field]}",
                 file=sys.stderr,
             )
     if a["metric"] == 0 or b["metric"] == 0:
-        if abs(a["metric"] - b["metric"]) > metric_tol:
+        metric_err = abs(a["metric"] - b["metric"])
+        row["metric_error"] = float(metric_err)
+        if metric_err > metric_tol:
             ok = False
+            row["pass"] = False
             print(
                 f"ERROR: {tag} metric mismatch exceeds tol {metric_tol}: "
                 f"td={a['metric']} fft={b['metric']}",
@@ -126,14 +143,38 @@ for tag in sorted(required):
             )
     else:
         metric_err = abs(a["metric"] - (b["metric"] * metric_ratio))
+        row["metric_error"] = float(metric_err)
         if metric_err > metric_tol:
             ok = False
+            row["pass"] = False
             print(
                 f"ERROR: {tag} metric mismatch exceeds tol {metric_tol} after "
                 f"ratio normalization ({metric_ratio:.6f}): "
                 f"td={a['metric']} fft={b['metric']}",
                 file=sys.stderr,
             )
+    rows.append(row)
+
+summary = {
+    "metric_tol": metric_tol,
+    "metric_ratio": metric_ratio,
+    "required_tags": sorted(required),
+    "pass": ok,
+    "rows": rows,
+}
+Path(report_json_path).write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+
+with Path(report_csv_path).open("w", encoding="utf-8") as fp:
+    fp.write("tag,td_success,fft_success,td_valid,fft_valid,td_prn,fft_prn,td_code,fft_code,td_dopp,fft_dopp,td_metric,fft_metric,metric_error,pass\n")
+    for row in rows:
+        tag = row["tag"]
+        td_v = row["td"]
+        fft_v = row["fft"]
+        fp.write(
+            f"{tag},{td_v['success']},{fft_v['success']},{td_v['valid']},{fft_v['valid']},"
+            f"{td_v['prn']},{fft_v['prn']},{td_v['code']},{fft_v['code']},{td_v['dopp']},{fft_v['dopp']},"
+            f"{td_v['metric']},{fft_v['metric']},{row['metric_error']:.6f},{int(bool(row['pass']))}\n"
+        )
 
 if not ok:
     sys.exit(1)

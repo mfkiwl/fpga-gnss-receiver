@@ -109,27 +109,27 @@ architecture rtl of gps_l1_ca_track_chan is
   signal next_late_i_s      : signed(31 downto 0);
   signal next_late_q_s      : signed(31 downto 0);
 
-  signal prompt_mag_s       : integer;
-  signal early_mag_s        : integer;
-  signal late_mag_s         : integer;
-  signal dll_err_q15_s      : integer;
-  signal carrier_err_pll_q15_s : integer;
-  signal carrier_err_fll_q15_s : integer;
-  signal carrier_err_sel_q15_s : integer;
+  signal prompt_mag_s       : integer := 0;
+  signal early_mag_s        : integer := 0;
+  signal late_mag_s         : integer := 0;
+  signal dll_err_q15_s      : integer := 0;
+  signal carrier_err_pll_q15_s : integer := 0;
+  signal carrier_err_fll_q15_s : integer := 0;
+  signal carrier_err_sel_q15_s : integer := 0;
 
-  signal prompt_i_s32_s     : integer;
-  signal prompt_q_s32_s     : integer;
-  signal early_i_s32_s      : integer;
-  signal early_q_s32_s      : integer;
-  signal late_i_s32_s       : integer;
-  signal late_q_s32_s       : integer;
+  signal prompt_i_s32_s     : integer := 0;
+  signal prompt_q_s32_s     : integer := 0;
+  signal early_i_s32_s      : integer := 0;
+  signal early_q_s32_s      : integer := 0;
+  signal late_i_s32_s       : integer := 0;
+  signal late_q_s32_s       : integer := 0;
 
-  signal cn0_sig_avg_next_s    : integer;
-  signal cn0_noise_avg_next_s  : integer;
-  signal nbd_avg_next_s        : integer;
-  signal nbp_avg_next_s        : integer;
-  signal cn0_dbhz_s            : integer;
-  signal carrier_metric_s      : integer;
+  signal cn0_sig_avg_next_s    : integer := 1;
+  signal cn0_noise_avg_next_s  : integer := 1;
+  signal nbd_avg_next_s        : integer := 0;
+  signal nbp_avg_next_s        : integer := 1;
+  signal cn0_dbhz_s            : integer := 0;
+  signal carrier_metric_s      : integer := 0;
 
   signal code_loop_i_next_s    : signed(31 downto 0);
   signal code_fcw_next_s       : unsigned(31 downto 0);
@@ -140,7 +140,7 @@ architecture rtl of gps_l1_ca_track_chan is
   signal state_next_s          : track_state_t;
   signal code_lock_next_s      : std_logic;
   signal carrier_lock_next_s   : std_logic;
-  signal lock_score_next_s     : integer;
+  signal lock_score_next_s     : integer := 0;
 begin
   track_state_o  <= state_r;
   code_lock_o    <= code_lock_r;
