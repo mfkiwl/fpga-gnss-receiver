@@ -36,16 +36,24 @@ architecture rtl of gps_l1_ca_acq_fft_bin_proc is
   signal corr_r       : cpx32_vec_t := (others => C_CPX_ZERO);
 
   function sat_s32_from_s64(x : signed(63 downto 0)) return signed is
-    variable hi_v : signed(31 downto 0);
+    variable sign_v : std_logic;
   begin
-    hi_v := x(63 downto 32);
-    if hi_v = to_signed(0, 32) or hi_v = to_signed(-1, 32) then
+    sign_v := x(31);
+    for i in 63 downto 32 loop
+      if x(i) /= sign_v then
+        if x(63) = '1' then
+          return C_S32_MIN;
+        end if;
+        if x(63) = '0' then
+          return C_S32_MAX;
+        end if;
+        return to_signed(0, 32);
+      end if;
+    end loop;
+    if sign_v = '0' or sign_v = '1' then
       return x(31 downto 0);
     end if;
-    if x(63) = '1' then
-      return C_S32_MIN;
-    end if;
-    return C_S32_MAX;
+    return to_signed(0, 32);
   end function;
 begin
   corr_o <= corr_r;
