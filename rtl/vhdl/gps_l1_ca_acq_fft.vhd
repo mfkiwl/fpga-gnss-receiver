@@ -40,15 +40,11 @@ end entity;
 architecture rtl of gps_l1_ca_acq_fft is
   type state_t is (
     IDLE,
-    PRN_SEQ_START,
-    PRN_SEQ_WAIT,
-    PRN_PREP_START,
-    PRN_PREP_WAIT,
+    PRN_PREP,
     CAPTURE_MS,
-    DOPP_PREP_START,
-    DOPP_PREP_WAIT,
-    DOPP_PROCESS_START,
-    DOPP_PROCESS_WAIT,
+    DOPP_START,
+    DOPP_WAIT,
+    CODE_EVAL,
     COH_COMMIT,
     PRN_EVAL,
     FINALIZE
@@ -56,6 +52,7 @@ architecture rtl of gps_l1_ca_acq_fft is
 
   signal state_r              : state_t := IDLE;
   signal prn_cur_r            : unsigned(5 downto 0) := to_unsigned(1, 6);
+  signal prn_stop_r           : unsigned(5 downto 0) := to_unsigned(1, 6);
 
   signal cap_i_r              : sample_arr_t;
   signal cap_q_r              : sample_arr_t;
@@ -67,9 +64,8 @@ architecture rtl of gps_l1_ca_acq_fft is
   signal bin_code_r           : code_arr_t;
   signal bin_dopp_r           : dopp_arr_t;
 
-  signal prn_seq_r            : prn_seq_t;
-  signal code_fft_r           : cpx32_bank_t;
-  signal signal_fft_r         : cpx32_vec_t;
+  signal prn_fft_r            : cpx32_vec_t := (others => C_CPX_ZERO);
+  signal corr_vec_r           : cpx32_vec_t := (others => C_CPX_ZERO);
 
   signal active_code_bins_r   : integer range 1 to C_MAX_CODE_BINS := C_DEF_CODE_BINS;
   signal active_dopp_bins_r   : integer range 1 to C_MAX_DOPP_BINS := C_DEF_DOPP_BINS;
@@ -80,7 +76,6 @@ architecture rtl of gps_l1_ca_acq_fft is
   signal coh_ms_idx_r         : integer range 0 to 254 := 0;
   signal noncoh_idx_r         : integer range 0 to 254 := 0;
 
-  signal prep_code_idx_r      : integer range 0 to C_MAX_CODE_BINS - 1 := 0;
   signal dopp_idx_r           : integer range 0 to C_MAX_DOPP_BINS - 1 := 0;
   signal code_eval_idx_r      : integer range 0 to C_MAX_CODE_BINS - 1 := 0;
 
@@ -99,24 +94,10 @@ architecture rtl of gps_l1_ca_acq_fft is
   signal acq_success_r        : std_logic := '0';
   signal result_valid_r       : std_logic := '0';
 
-  signal prn_gen_start_r      : std_logic := '0';
-  signal prn_req_prn_r        : unsigned(5 downto 0) := to_unsigned(1, 6);
-  signal prn_gen_done_s       : std_logic;
-  signal prn_seq_s            : prn_seq_t;
-
-  signal code_gen_start_r     : std_logic := '0';
-  signal code_gen_done_s      : std_logic;
-  signal code_fft_s           : cpx32_vec_t;
-
-  signal mix_fft_start_r      : std_logic := '0';
-  signal mix_fft_done_s       : std_logic;
-  signal mix_fft_s            : cpx32_vec_t;
-
-  signal corr_start_r         : std_logic := '0';
-  signal corr_done_s          : std_logic;
-  signal corr_s               : cpx32_t;
+  signal bin_proc_start_r     : std_logic := '0';
+  signal bin_proc_done_s      : std_logic;
+  signal bin_proc_corr_s      : cpx32_vec_t;
   signal mix_dopp_hz_s        : signed(15 downto 0);
-  signal corr_code_fft_s      : cpx32_vec_t;
 begin
   acq_done      <= acq_done_r;
   acq_success   <= acq_success_r;
@@ -126,51 +107,19 @@ begin
   result_code   <= best_code_r;
   result_metric <= best_metric_r;
 
-  mix_dopp_hz_s   <= bin_dopp_r(dopp_idx_r * active_code_bins_r);
-  corr_code_fft_s <= code_fft_r(code_eval_idx_r);
+  mix_dopp_hz_s <= bin_dopp_r(dopp_idx_r * active_code_bins_r);
 
-  prn_gen_u : entity work.gps_l1_ca_acq_fft_prn_gen
+  bin_proc_u : entity work.gps_l1_ca_acq_fft_bin_proc
     port map (
-      clk    => clk,
-      rst_n  => rst_n,
-      start  => prn_gen_start_r,
-      prn_i  => prn_req_prn_r,
-      seq_o  => prn_seq_s,
-      done_o => prn_gen_done_s
-    );
-
-  code_gen_u : entity work.gps_l1_ca_acq_fft_code_gen
-    port map (
-      clk          => clk,
-      rst_n        => rst_n,
-      start        => code_gen_start_r,
-      prn_seq_i    => prn_seq_r,
-      code_start_i => bin_code_r(prep_code_idx_r),
-      code_fft_o   => code_fft_s,
-      done_o       => code_gen_done_s
-    );
-
-  mix_fft_u : entity work.gps_l1_ca_acq_fft_mix_fft
-    port map (
-      clk          => clk,
-      rst_n        => rst_n,
-      start        => mix_fft_start_r,
-      cap_i_i      => cap_i_r,
-      cap_q_i      => cap_q_r,
-      dopp_hz_i    => mix_dopp_hz_s,
-      signal_fft_o => mix_fft_s,
-      done_o       => mix_fft_done_s
-    );
-
-  corr_u : entity work.gps_l1_ca_acq_fft_corr
-    port map (
-      clk        => clk,
-      rst_n      => rst_n,
-      start      => corr_start_r,
-      sig_fft_i  => signal_fft_r,
-      code_fft_i => corr_code_fft_s,
-      corr_o     => corr_s,
-      done_o     => corr_done_s
+      clk       => clk,
+      rst_n     => rst_n,
+      start     => bin_proc_start_r,
+      cap_i_i   => cap_i_r,
+      cap_q_i   => cap_q_r,
+      dopp_hz_i => mix_dopp_hz_s,
+      prn_fft_i => prn_fft_r,
+      corr_o    => bin_proc_corr_s,
+      done_o    => bin_proc_done_s
     );
 
   process (clk)
@@ -195,6 +144,8 @@ begin
     variable code_i            : integer;
     variable dopp_hz_i         : integer;
     variable next_prn_i        : integer;
+    variable prn_start_i       : integer;
+    variable prn_stop_i        : integer;
 
     variable coh_metric_v      : unsigned(31 downto 0);
     variable noncoh_sum_v      : unsigned(31 downto 0);
@@ -206,6 +157,7 @@ begin
       if rst_n = '0' then
         state_r             <= IDLE;
         prn_cur_r           <= to_unsigned(1, 6);
+        prn_stop_r          <= to_unsigned(1, 6);
         cap_sample_idx_r    <= 0;
         active_code_bins_r  <= C_DEF_CODE_BINS;
         active_dopp_bins_r  <= C_DEF_DOPP_BINS;
@@ -214,7 +166,6 @@ begin
         active_noncoh_r     <= G_DWELL_MS;
         coh_ms_idx_r        <= 0;
         noncoh_idx_r        <= 0;
-        prep_code_idx_r     <= 0;
         dopp_idx_r          <= 0;
         code_eval_idx_r     <= 0;
         finalize_bin_idx_r  <= 0;
@@ -230,11 +181,9 @@ begin
         acq_success_r       <= '0';
         result_valid_r      <= '0';
 
-        prn_gen_start_r     <= '0';
-        code_gen_start_r    <= '0';
-        mix_fft_start_r     <= '0';
-        corr_start_r        <= '0';
-        prn_req_prn_r       <= to_unsigned(1, 6);
+        prn_fft_r           <= (others => C_CPX_ZERO);
+        corr_vec_r          <= (others => C_CPX_ZERO);
+        bin_proc_start_r    <= '0';
 
         for i in 0 to C_MAX_BINS - 1 loop
           noncoh_metric_r(i) <= (others => '0');
@@ -243,16 +192,10 @@ begin
           bin_code_r(i) <= (others => '0');
           bin_dopp_r(i) <= (others => '0');
         end loop;
-        for i in 0 to 1022 loop
-          prn_seq_r(i) <= '0';
-        end loop;
       else
-        acq_done_r      <= '0';
-        result_valid_r  <= '0';
-        prn_gen_start_r <= '0';
-        code_gen_start_r <= '0';
-        mix_fft_start_r <= '0';
-        corr_start_r    <= '0';
+        acq_done_r       <= '0';
+        result_valid_r   <= '0';
+        bin_proc_start_r <= '0';
 
         case state_r is
           when IDLE =>
@@ -365,12 +308,24 @@ begin
               active_coh_ms_r     <= coh_cfg_i;
               active_noncoh_r     <= noncoh_cfg_i;
 
-              prn_cur_r           <= prn_start;
-              prn_req_prn_r       <= prn_start;
+              prn_start_i := to_integer(prn_start);
+              prn_stop_i  := to_integer(prn_stop);
+              if prn_start_i < 1 then
+                prn_start_i := 1;
+              elsif prn_start_i > 32 then
+                prn_start_i := 32;
+              end if;
+              if prn_stop_i < 1 then
+                prn_stop_i := 1;
+              elsif prn_stop_i > 32 then
+                prn_stop_i := 32;
+              end if;
+
+              prn_cur_r           <= to_unsigned(prn_start_i, prn_cur_r'length);
+              prn_stop_r          <= to_unsigned(prn_stop_i, prn_stop_r'length);
               cap_sample_idx_r    <= 0;
               coh_ms_idx_r        <= 0;
               noncoh_idx_r        <= 0;
-              prep_code_idx_r     <= 0;
               dopp_idx_r          <= 0;
               code_eval_idx_r     <= 0;
               finalize_bin_idx_r  <= 0;
@@ -379,95 +334,72 @@ begin
               prn_best_code_r     <= (others => '0');
               prn_best_dopp_r     <= (others => '0');
               best_metric_r       <= (others => '0');
-              best_prn_r          <= prn_start;
+              best_prn_r          <= to_unsigned(prn_start_i, best_prn_r'length);
               best_code_r         <= (others => '0');
               best_dopp_r         <= (others => '0');
 
-              state_r <= PRN_SEQ_START;
+              state_r <= PRN_PREP;
             end if;
 
-          when PRN_SEQ_START =>
-            prn_gen_start_r <= '1';
-            state_r <= PRN_SEQ_WAIT;
-
-          when PRN_SEQ_WAIT =>
-            if prn_gen_done_s = '1' then
-              prn_seq_r <= prn_seq_s;
-              prep_code_idx_r <= 0;
-              state_r <= PRN_PREP_START;
-            end if;
-
-          when PRN_PREP_START =>
-            code_gen_start_r <= '1';
-            state_r <= PRN_PREP_WAIT;
-
-          when PRN_PREP_WAIT =>
-            if code_gen_done_s = '1' then
-              code_fft_r(prep_code_idx_r) <= code_fft_s;
-
-              if prep_code_idx_r + 1 >= active_code_bins_r then
-                cap_sample_idx_r <= 0;
-                dopp_idx_r <= 0;
-                code_eval_idx_r <= 0;
-                state_r <= CAPTURE_MS;
-              else
-                prep_code_idx_r <= prep_code_idx_r + 1;
-                state_r <= PRN_PREP_START;
-              end if;
-            end if;
+          when PRN_PREP =>
+            prn_fft_r        <= prn_fft_from_lut(to_integer(prn_cur_r));
+            cap_sample_idx_r <= 0;
+            dopp_idx_r       <= 0;
+            code_eval_idx_r  <= 0;
+            state_r          <= CAPTURE_MS;
 
           when CAPTURE_MS =>
             if s_valid = '1' then
               cap_i_r(cap_sample_idx_r) <= s_i;
               cap_q_r(cap_sample_idx_r) <= s_q;
               if cap_sample_idx_r = C_SAMPLES_PER_MS - 1 then
-                dopp_idx_r <= 0;
+                dopp_idx_r      <= 0;
                 code_eval_idx_r <= 0;
-                state_r <= DOPP_PREP_START;
+                state_r         <= DOPP_START;
               else
                 cap_sample_idx_r <= cap_sample_idx_r + 1;
               end if;
             end if;
 
-          when DOPP_PREP_START =>
-            mix_fft_start_r <= '1';
-            state_r <= DOPP_PREP_WAIT;
+          when DOPP_START =>
+            bin_proc_start_r <= '1';
+            state_r <= DOPP_WAIT;
 
-          when DOPP_PREP_WAIT =>
-            if mix_fft_done_s = '1' then
-              signal_fft_r <= mix_fft_s;
+          when DOPP_WAIT =>
+            if bin_proc_done_s = '1' then
+              corr_vec_r      <= bin_proc_corr_s;
               code_eval_idx_r <= 0;
-              state_r <= DOPP_PROCESS_START;
+              state_r         <= CODE_EVAL;
             end if;
 
-          when DOPP_PROCESS_START =>
-            corr_start_r <= '1';
-            state_r <= DOPP_PROCESS_WAIT;
+          when CODE_EVAL =>
+            bin_i  := (dopp_idx_r * active_code_bins_r) + code_eval_idx_r;
+            code_i := to_integer(bin_code_r(bin_i));
+            if code_i < 0 then
+              code_i := 0;
+            elsif code_i > C_NFFT - 1 then
+              code_i := C_NFFT - 1;
+            end if;
 
-          when DOPP_PROCESS_WAIT =>
-            if corr_done_s = '1' then
-              bin_i := (dopp_idx_r * active_code_bins_r) + code_eval_idx_r;
-              coh_i_acc_r(bin_i) <= coh_i_acc_r(bin_i) + resize(corr_s.re, coh_i_acc_r(bin_i)'length);
-              coh_q_acc_r(bin_i) <= coh_q_acc_r(bin_i) + resize(corr_s.im, coh_q_acc_r(bin_i)'length);
+            coh_i_acc_r(bin_i) <= coh_i_acc_r(bin_i) + resize(corr_vec_r(code_i).re, coh_i_acc_r(bin_i)'length);
+            coh_q_acc_r(bin_i) <= coh_q_acc_r(bin_i) + resize(corr_vec_r(code_i).im, coh_q_acc_r(bin_i)'length);
 
-              if code_eval_idx_r + 1 >= active_code_bins_r then
-                if dopp_idx_r + 1 >= active_dopp_bins_r then
-                  if coh_ms_idx_r + 1 >= active_coh_ms_r then
-                    finalize_bin_idx_r <= 0;
-                    state_r <= COH_COMMIT;
-                  else
-                    coh_ms_idx_r <= coh_ms_idx_r + 1;
-                    cap_sample_idx_r <= 0;
-                    state_r <= CAPTURE_MS;
-                  end if;
+            if code_eval_idx_r + 1 >= active_code_bins_r then
+              if dopp_idx_r + 1 >= active_dopp_bins_r then
+                if coh_ms_idx_r + 1 >= active_coh_ms_r then
+                  finalize_bin_idx_r <= 0;
+                  state_r <= COH_COMMIT;
                 else
-                  dopp_idx_r <= dopp_idx_r + 1;
-                  state_r <= DOPP_PREP_START;
+                  coh_ms_idx_r     <= coh_ms_idx_r + 1;
+                  cap_sample_idx_r <= 0;
+                  state_r          <= CAPTURE_MS;
                 end if;
               else
-                code_eval_idx_r <= code_eval_idx_r + 1;
-                state_r <= DOPP_PROCESS_START;
+                dopp_idx_r <= dopp_idx_r + 1;
+                state_r <= DOPP_START;
               end if;
+            else
+              code_eval_idx_r <= code_eval_idx_r + 1;
             end if;
 
           when COH_COMMIT =>
@@ -483,17 +415,17 @@ begin
             if finalize_bin_idx_r + 1 >= active_total_bins_r then
               coh_ms_idx_r <= 0;
               if noncoh_idx_r + 1 >= active_noncoh_r then
-                prn_eval_idx_r <= 0;
+                prn_eval_idx_r    <= 0;
                 prn_best_metric_r <= (others => '0');
-                prn_best_code_r <= bin_code_r(0);
-                prn_best_dopp_r <= bin_dopp_r(0);
-                state_r <= PRN_EVAL;
+                prn_best_code_r   <= bin_code_r(0);
+                prn_best_dopp_r   <= bin_dopp_r(0);
+                state_r           <= PRN_EVAL;
               else
-                noncoh_idx_r <= noncoh_idx_r + 1;
+                noncoh_idx_r     <= noncoh_idx_r + 1;
                 cap_sample_idx_r <= 0;
-                dopp_idx_r <= 0;
-                code_eval_idx_r <= 0;
-                state_r <= CAPTURE_MS;
+                dopp_idx_r       <= 0;
+                code_eval_idx_r  <= 0;
+                state_r          <= CAPTURE_MS;
               end if;
             else
               finalize_bin_idx_r <= finalize_bin_idx_r + 1;
@@ -517,7 +449,7 @@ begin
                 best_dopp_r   <= prn_dopp_next_v;
               end if;
 
-              if prn_cur_r >= prn_stop then
+              if prn_cur_r >= prn_stop_r then
                 state_r <= FINALIZE;
               else
                 next_prn_i := to_integer(prn_cur_r) + 1;
@@ -525,14 +457,12 @@ begin
                   next_prn_i := 63;
                 end if;
 
-                prn_cur_r <= to_unsigned(next_prn_i, prn_cur_r'length);
-                prn_req_prn_r <= to_unsigned(next_prn_i, prn_req_prn_r'length);
-                prep_code_idx_r <= 0;
+                prn_cur_r      <= to_unsigned(next_prn_i, prn_cur_r'length);
                 cap_sample_idx_r <= 0;
-                coh_ms_idx_r <= 0;
-                noncoh_idx_r <= 0;
-                dopp_idx_r <= 0;
-                code_eval_idx_r <= 0;
+                coh_ms_idx_r     <= 0;
+                noncoh_idx_r     <= 0;
+                dopp_idx_r       <= 0;
+                code_eval_idx_r  <= 0;
 
                 for i in 0 to C_MAX_BINS - 1 loop
                   noncoh_metric_r(i) <= (others => '0');
@@ -540,13 +470,13 @@ begin
                   coh_q_acc_r(i) <= (others => '0');
                 end loop;
 
-                state_r <= PRN_SEQ_START;
+                state_r <= PRN_PREP;
               end if;
             else
               prn_best_metric_r <= prn_metric_next_v;
               prn_best_code_r   <= prn_code_next_v;
               prn_best_dopp_r   <= prn_dopp_next_v;
-              prn_eval_idx_r <= prn_eval_idx_r + 1;
+              prn_eval_idx_r    <= prn_eval_idx_r + 1;
             end if;
 
           when FINALIZE =>

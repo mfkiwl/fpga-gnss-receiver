@@ -33,6 +33,7 @@ package gps_l1_ca_acq_fft_pkg is
 
   type cpx32_vec_t is array (0 to C_NFFT - 1) of cpx32_t;
   type cpx32_bank_t is array (0 to C_MAX_CODE_BINS - 1) of cpx32_vec_t;
+  type prn_fft_lut_t is array (1 to 32) of cpx32_vec_t;
 
   constant C_CPX_ZERO : cpx32_t := (
     re => (others => '0'),
@@ -71,6 +72,8 @@ package gps_l1_ca_acq_fft_pkg is
     sig_fft  : cpx32_vec_t;
     code_fft : cpx32_vec_t
   ) return cpx32_t;
+
+  function prn_fft_from_lut(prn_i : integer) return cpx32_vec_t;
 end package;
 
 package body gps_l1_ca_acq_fft_pkg is
@@ -488,5 +491,39 @@ package body gps_l1_ca_acq_fft_pkg is
     out_v.re := sat_resize_s32(div_pow2_tz(acc_re, C_FFT_BITS));
     out_v.im := sat_resize_s32(div_pow2_tz(acc_im, C_FFT_BITS));
     return out_v;
+  end function;
+
+  function neg_sat_s32(x : signed(31 downto 0)) return signed is
+  begin
+    if x = C_S32_MIN then
+      return C_S32_MAX;
+    end if;
+    return -x;
+  end function;
+
+  function build_prn_fft_lut return prn_fft_lut_t is
+    variable out_v      : prn_fft_lut_t := (others => (others => C_CPX_ZERO));
+    variable seq_v      : prn_seq_t;
+    variable fft_raw_v  : cpx32_vec_t;
+  begin
+    for prn in 1 to 32 loop
+      seq_v := build_prn_sequence(prn);
+      fft_raw_v := fft_radix2(build_code_fft_input(seq_v, 0), false);
+      for k in 0 to C_NFFT - 1 loop
+        out_v(prn)(k).re := fft_raw_v(k).re;
+        out_v(prn)(k).im := neg_sat_s32(fft_raw_v(k).im);
+      end loop;
+    end loop;
+    return out_v;
+  end function;
+
+  constant C_PRN_FFT_LUT : prn_fft_lut_t := build_prn_fft_lut;
+
+  function prn_fft_from_lut(prn_i : integer) return cpx32_vec_t is
+  begin
+    if prn_i >= 1 and prn_i <= 32 then
+      return C_PRN_FFT_LUT(prn_i);
+    end if;
+    return (others => C_CPX_ZERO);
   end function;
 end package body;

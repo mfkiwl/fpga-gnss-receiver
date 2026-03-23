@@ -1,3 +1,6 @@
 [submodule "GNSS-DSP-tools"]
 	path = GNSS-DSP-tools
 	url = git@github.com:rigoorozco/GNSS-DSP-tools.git
+[submodule "rtl/vhdl/fpga-fft"]
+	path = rtl/vhdl/fpga-fft
+	url = https://github.com/owocomm-0/fpga-fft.git
