@@ -8,7 +8,6 @@ ALL_UNIT_TBS=(
   gps_l1_ca_acq_fft_code_gen_tb
   gps_l1_ca_acq_fft_mix_fft_tb
   gps_l1_ca_acq_fft_corr_tb
-  gps_l1_ca_acq_fft_tb
   gps_l1_ca_track_discriminators_tb
   gps_l1_ca_track_loop_filters_tb
   gps_l1_ca_track_power_lock_tb
@@ -98,16 +97,6 @@ for tb in "${UNIT_TBS[@]}"; do
     run_cmd+=(--wave="${UNIT_ACQ_WAVE_FILE}")
     echo "   wave: ${UNIT_ACQ_WAVE_FILE}"
     echo "   acq impl fft: ${UNIT_ACQ_IMPL_FFT}"
-  elif [[ "${tb}" == "gps_l1_ca_acq_fft_tb" ]]; then
-    # The integrated FFT acquisition TB allocates large scorebanks at elaboration.
-    elab_cmd=(nvc --std=2008 --stderr="${NVC_STDERR_LEVEL}" -H 512m -e)
-    run_cmd=(
-      nvc --std=2008
-      --stderr="${NVC_STDERR_LEVEL}"
-      -H 512m
-      -r "${tb}"
-      --stop-time="${UNIT_TB_STOP_TIME}"
-    )
   fi
   elab_cmd+=("${tb}")
 

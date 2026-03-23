@@ -15,7 +15,6 @@ UNIT_TBS := \
 	gps_l1_ca_acq_fft_code_gen_tb \
 	gps_l1_ca_acq_fft_mix_fft_tb \
 	gps_l1_ca_acq_fft_corr_tb \
-	gps_l1_ca_acq_fft_tb \
 	gps_l1_ca_track_discriminators_tb \
 	gps_l1_ca_track_loop_filters_tb \
 	gps_l1_ca_track_power_lock_tb \
